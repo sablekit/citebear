@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# builds
+.next/
+out/
+dist/
+*.egg-info/
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# platform
+.vercel/
+
+# local-only files
+docs/SPEC.zh-CN.md
+CLAUDE.local.md
+
+# misc
+.DS_Store
+*.log
