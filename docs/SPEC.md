@@ -84,6 +84,11 @@ and embedding a max-size document is a multi-minute request, and serverless
 offers no safe fire-and-forget background work (see 5.1). Milestone 0
 validates this with a synthetic long-request test before any feature work.
 
+> **Validated 2026-07-02:** a 270 s streamed request (CPU bursts + I/O waits)
+> completed on Fluid with progressive streaming and no timeout. Worst-case
+> ingestion (~2–3 min) fits with margin. **Decision: Vercel; the Railway
+> fallback is retired.**
+
 ## 4. Data model (Postgres + pgvector)
 
 ```sql
