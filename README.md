@@ -5,7 +5,7 @@
 CiteBear answers questions over your documents with **citations to the exact
 page**, streams like ChatGPT, and says *"I don't know"* instead of guessing.
 
-**Live demo:** [citebear.com](https://citebear.com) *(coming soon)*
+**Try it live:** [citebear.com](https://citebear.com) *(coming soon)*
 
 ## Status
 

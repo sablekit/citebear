@@ -17,7 +17,7 @@ does not support an answer, CiteBear says "I don't know" instead of guessing.
 
 Two personas:
 
-- **Visitor** — chats with preloaded demo documents on the public demo. No login.
+- **Visitor** — chats with the preloaded library on the public instance. No login.
 - **Admin** — uploads/manages documents, reviews the question log and feedback
   stats. Protected by a single admin password (no user accounts in v1).
 
@@ -148,6 +148,11 @@ acceptable and documented.
 
 Schema migrations are managed with **Alembic** from day one.
 
+Primary keys default to `uuidv7()` when Neon runs Postgres ≥ 18 (verified in
+Milestone 0), else `gen_random_uuid()`. UUIDv7's timestamp prefix keeps B-tree
+inserts append-only. External JSON is camelCase (pydantic alias generators);
+SQL and Python stay snake_case.
+
 ## 5. RAG pipeline
 
 ### 5.1 Ingestion
@@ -222,7 +227,7 @@ swappable behind an interface (`Reranker` protocol) for a cross-encoder later.
 event: sources   data: {"citations":[{"marker":1,"chunkId":"…","docTitle":"…","page":12,"snippet":"…"}], "confidence":"high"}
 event: token     data: {"delta":"The install requires"}   (repeated)
 event: done      data: {"messageId":"…","grounded":true}
-event: error     data: {"code":"…","message":"…"}
+event: error     data: {"type":"…","title":"…","status":500,"detail":"…"}
 ```
 
 `sources` is sent **before** tokens so the UI can render citation chips
@@ -232,7 +237,7 @@ data-stream protocol on the way through.
 
 ### 5.5 Latency budget
 
-Target: **first token in < 3s** on the demo. The critical path is
+Target: **first token in < 3s** on the public instance. The critical path is
 condense (LLM) → embed → search → rerank (LLM) → generate — three serial
 model calls in the worst case. Mitigations are part of the design, not
 afterthoughts:
@@ -268,6 +273,10 @@ documented in the README design notes.
 | GET | `/admin/stats` | admin | Totals: questions, 👍/👎, refusal rate, docs |
 | GET | `/healthz` | public | Liveness + DB connectivity |
 
+- **Errors:** every non-2xx response is RFC 9457 Problem Details
+  (`application/problem+json`): `{type, title, status, detail}` plus
+  extensions such as `retryAfter`. The SSE `error` event carries the same
+  fields. No custom error envelopes.
 - **`/chat` request body:** `{sessionId: uuid, message: string}`. The session
   id is generated client-side (one per chat tab); there is no server-side
   session object in v1 — it merely groups `messages` rows for multi-turn
@@ -281,7 +290,7 @@ documented in the README design notes.
 - **Admin auth:** `Authorization: Bearer <ADMIN_PASSWORD>` checked by a FastAPI
   dependency. The web admin page stores the password in an httpOnly cookie via
   a Next.js route handler; the browser never calls the Python API directly.
-- **Rate limit (public demo):** 20 chat requests / hour / IP, enforced in the
+- **Rate limit (public instance):** 20 chat requests / hour / IP, enforced in the
   API. Refusals still count. Counter state lives in Postgres — a count over
   `messages(ip_hash, created_at)` — because in-memory counters are useless
   across serverless instances; no Redis in v1.
@@ -326,8 +335,8 @@ Focus: the retrieval pipeline is the product — test it like one.
   across boundaries), RRF fusion, citation post-check, confidence mapping.
 - **Integration:** ingestion → retrieval round-trip against a real Postgres
   (docker-compose / Neon branch) with a small fixture document set.
-- **Golden retrieval set:** ~15 question→expected-chunk pairs over the demo
-  documents; asserts the expected chunk appears in top-5. Guards against
+- **Golden retrieval set:** ~15 question→expected-chunk pairs over the
+  preloaded library; asserts the expected chunk appears in top-5. Guards against
   chunking/retrieval regressions. Runs as a **manually-triggered workflow and
   on PRs to main only** — it needs live model API keys and costs tokens, so it
   stays out of the every-push CI loop (unit tests cover every push).
@@ -344,15 +353,15 @@ Focus: the retrieval pipeline is the product — test it like one.
 | 3 | Hybrid retrieval + rerank + confidence/refusal; golden retrieval tests | The retrieval depth clients ask for |
 | 4 | Upload pipeline (PDF/DOCX/MD) + admin documents tab | Self-serve ingestion |
 | 5 | Question log, feedback, stats; rate limiting; polish | Support-bot story complete |
-| 6 | README case study (banner, architecture diagram, design notes, GIF), demo docs preloaded | The portfolio artifact |
+| 6 | README case study (banner, architecture diagram, design notes, GIF), preloaded library shipped | The portfolio artifact |
 
 Each milestone lands as small conventional commits via PR — the git history is
 part of the deliverable.
 
-## 11. Demo document set (decided 2026-07-02)
+## 11. Preloaded document library (decided 2026-07-02)
 
 Compliance is a hard requirement: no NC/ND clauses anywhere, so the set stays
-clean even if the demo ever backs commercial work.
+clean even if the product ever backs commercial work.
 
 | Document | License | Genre it demonstrates |
 |---|---|---|
@@ -363,11 +372,11 @@ clean even if the demo ever backs commercial work.
 (Pro Git was considered and dropped: its CC BY-**NC**-SA license would become
 ambiguous in commercial contexts.)
 
-Compliance practices: the demo UI and README show per-document attribution
+Compliance practices: the product UI and README show per-document attribution
 (title, authors, license, link to the original); content is shown as
 unmodified retrieved excerpts; the license text shipped with each document is
 verified at ingestion time. CiteBear's own README/SPEC are also ingested as
-Markdown demo content (self-owned, MIT).
+Markdown sample content (self-owned, MIT).
 
 ## 12. Open questions
 
@@ -375,5 +384,5 @@ Markdown demo content (self-owned, MIT).
    default. Gateway embeddings support is confirmed (as of 2026-07 both Vercel
    AI Gateway and OpenRouter expose an embeddings API); the remaining question
    is only whether another model wins on the golden retrieval set.
-2. **Chat model default for the free demo** — quality vs. token cost on a public,
-   rate-limited endpoint.
+2. **Chat model default for the public instance** — quality vs. token cost on a
+   public, rate-limited endpoint.
