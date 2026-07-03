@@ -79,8 +79,13 @@ def _install_mocks(
         for token in answer.split(" "):
             yield token + " "
 
+    class _FakeReranker:
+        async def rerank(self, _query: str, hits: list[RetrievedChunk]) -> list[RetrievedChunk]:
+            return hits  # identity: keep the pipeline test independent of scoring
+
     monkeypatch.setattr(chat, "embed_query", fake_embed)
     monkeypatch.setattr(chat, "hybrid_retrieve", fake_retrieve)
+    monkeypatch.setattr(chat, "get_reranker", lambda: _FakeReranker())
     monkeypatch.setattr(chat, "stream_answer", fake_stream)
     monkeypatch.setattr(chat, "get_session_factory", lambda: lambda: _FakeSession(added))
     return added

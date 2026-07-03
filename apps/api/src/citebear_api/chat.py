@@ -33,6 +33,7 @@ from citebear_api.events import (
 from citebear_api.generation import is_refusal, stream_answer
 from citebear_api.models import Message, MessageCitation
 from citebear_api.problems import problem
+from citebear_api.rerank import get_reranker
 from citebear_api.retrieval import FINAL_TOP_K, embed_query, hybrid_retrieve
 
 logger = logging.getLogger(__name__)
@@ -104,9 +105,11 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
             await db.commit()
 
         # hybrid retrieval runs on its own sessions (vector ∥ keyword), so it is
-        # kept out of the write transaction above
+        # kept out of the write transaction above; the reranker then reorders the
+        # candidates by relevance and we keep the top-5
         candidates = await hybrid_retrieve(session_factory, turn.message, query_vector)
-        chunks = candidates[:FINAL_TOP_K]
+        reranked = await get_reranker().rerank(turn.message, candidates)
+        chunks = reranked[:FINAL_TOP_K]
 
         # sources before tokens: the UI renders citation chips while the answer
         # is still being written (SPEC §5.4)

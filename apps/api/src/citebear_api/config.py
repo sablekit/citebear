@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     gateway_api_key: str
     internal_api_key: str
     chat_model: str = "anthropic/claude-haiku-4-5"
+    rerank_model: str = "anthropic/claude-haiku-4-5"
     embedding_model: str = "openai/text-embedding-3-small"
 
 
