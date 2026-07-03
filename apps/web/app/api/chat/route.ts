@@ -1,8 +1,4 @@
-import {
-  createUIMessageStream,
-  createUIMessageStreamResponse,
-  type UIMessageChunk,
-} from "ai";
+import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 
 import { env } from "@/env";
 
@@ -55,31 +51,11 @@ async function* parseSse(body: ReadableStream<Uint8Array>): AsyncGenerator<Upstr
   }
 }
 
-function toUiChunks(events: AsyncGenerator<UpstreamEvent>) {
-  return async ({ writer }: { writer: { write: (chunk: UIMessageChunk) => void } }) => {
-    const textId = "answer";
-    let textStarted = false;
-    writer.write({ type: "start" });
-    for await (const { event, data } of events) {
-      if (event === "token") {
-        const { delta } = JSON.parse(data) as { delta: string };
-        if (!textStarted) {
-          writer.write({ type: "text-start", id: textId });
-          textStarted = true;
-        }
-        writer.write({ type: "text-delta", id: textId, delta });
-      } else if (event === "error") {
-        const problem = JSON.parse(data) as { title?: string; detail?: string };
-        writer.write({
-          type: "error",
-          errorText: problem.detail ?? problem.title ?? "Something went wrong.",
-        });
-      }
-      // "done" carries messageId/grounded; the feedback UI consumes it in Milestone 5
-    }
-    if (textStarted) writer.write({ type: "text-end", id: textId });
-    writer.write({ type: "finish" });
-  };
+function problemResponse(status: number, title: string, detail: string): Response {
+  return Response.json(
+    { type: "about:blank", title, status, detail },
+    { status, headers: { "Content-Type": "application/problem+json" } },
+  );
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -87,15 +63,23 @@ export async function POST(request: Request): Promise<Response> {
   const forwardedFor = request.headers.get("x-forwarded-for");
   const clientIp = forwardedFor?.split(",")[0]?.trim();
 
-  const upstream = await fetch(`${env.API_URL}/chat`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Internal-Key": env.INTERNAL_API_KEY,
-      ...(clientIp ? { "X-Client-IP": clientIp } : {}),
-    },
-    body,
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${env.API_URL}/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Key": env.INTERNAL_API_KEY,
+        ...(clientIp ? { "X-Client-IP": clientIp } : {}),
+      },
+      body,
+      // client disconnect must cancel the upstream stream, or the model
+      // keeps generating (and billing) for an answer nobody will see
+      signal: request.signal,
+    });
+  } catch {
+    return problemResponse(502, "Bad Gateway", "The answer service is unreachable.");
+  }
 
   if (!upstream.ok || !upstream.body) {
     return new Response(await upstream.text(), {
@@ -106,6 +90,41 @@ export async function POST(request: Request): Promise<Response> {
     });
   }
 
-  const stream = createUIMessageStream({ execute: toUiChunks(parseSse(upstream.body)) });
+  const upstreamBody = upstream.body;
+  const stream = createUIMessageStream({
+    execute: async ({ writer }) => {
+      const textId = "answer";
+      let textStarted = false;
+      let terminated = false; // saw the protocol's done or error event
+      writer.write({ type: "start" });
+      for await (const { event, data } of parseSse(upstreamBody)) {
+        if (event === "token") {
+          const { delta } = JSON.parse(data) as { delta: string };
+          if (!textStarted) {
+            writer.write({ type: "text-start", id: textId });
+            textStarted = true;
+          }
+          writer.write({ type: "text-delta", id: textId, delta });
+        } else if (event === "done") {
+          // carries messageId/grounded; the feedback UI consumes it in Milestone 5
+          terminated = true;
+        } else if (event === "error") {
+          const problem = JSON.parse(data) as { title?: string; detail?: string };
+          writer.write({
+            type: "error",
+            errorText: problem.detail ?? problem.title ?? "Something went wrong.",
+          });
+          terminated = true;
+        }
+      }
+      if (textStarted) writer.write({ type: "text-end", id: textId });
+      if (!terminated) {
+        // upstream closed mid-answer (timeout, reset): a truncated answer
+        // must not render as a complete one
+        writer.write({ type: "error", errorText: "The answer was cut off. Please retry." });
+      }
+      writer.write({ type: "finish" });
+    },
+  });
   return createUIMessageStreamResponse({ stream });
 }
