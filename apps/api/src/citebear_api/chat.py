@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from citebear_api.citations import build_citations, cited_markers
+from citebear_api.condense import condense_question
 from citebear_api.confidence import assess
 from citebear_api.config import get_settings
 from citebear_api.db import get_session_factory
@@ -83,8 +84,6 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
     settings = get_settings()
     session_factory = get_session_factory()
     try:
-        # gateway round trip first, so no DB connection is held across it
-        query_vector = await embed_query(turn.message)
         async with session_factory() as db:
             history_rows = (
                 await db.execute(
@@ -105,11 +104,17 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
             )
             await db.commit()
 
-        # hybrid retrieval runs on its own sessions (vector ∥ keyword), so it is
-        # kept out of the write transaction above; the reranker then reorders the
-        # candidates by relevance and we keep the top-5
-        candidates = await hybrid_retrieve(session_factory, turn.message, query_vector)
-        reranked = await get_reranker().rerank(turn.message, candidates)
+        # follow-ups elide their subject, so retrieval runs on a standalone
+        # question rewritten from the history (SPEC §5.3); the first turn has no
+        # history and skips the call. Gateway round trips (condense, embed) stay
+        # outside the write transaction above so no DB connection is held.
+        query = await condense_question(turn.message, history)
+        query_vector = await embed_query(query)
+
+        # hybrid retrieval runs on its own sessions (vector ∥ keyword); the
+        # reranker then reorders the candidates by relevance and we keep the top-5
+        candidates = await hybrid_retrieve(session_factory, query, query_vector)
+        reranked = await get_reranker().rerank(query, candidates)
         chunks = reranked[:FINAL_TOP_K]
         confidence, should_generate = assess(chunks)
 

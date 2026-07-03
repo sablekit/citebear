@@ -145,6 +145,29 @@ def test_refusal_persists_no_citations(monkeypatch: pytest.MonkeyPatch) -> None:
     assert events[-1].data["grounded"] is False
 
 
+def test_condensed_query_feeds_retrieval(monkeypatch: pytest.MonkeyPatch) -> None:
+    chunks = [_chunk(1)]
+    _install_mocks(monkeypatch, chunks, "answer [1].")
+    seen: dict[str, str] = {}
+
+    async def fake_condense(_message: str, _history: list[tuple[str, str]]) -> str:
+        return "standalone question"
+
+    async def capture_retrieve(
+        _factory: object, query: str, _vector: object
+    ) -> list[RetrievedChunk]:
+        seen["query"] = query
+        return chunks
+
+    monkeypatch.setattr(chat, "condense_question", fake_condense)
+    monkeypatch.setattr(chat, "hybrid_retrieve", capture_retrieve)
+
+    _run(_turn())
+
+    # retrieval runs on the condensed standalone question, not the raw message
+    assert seen["query"] == "standalone question"
+
+
 def test_low_scores_refuse_without_calling_generator(monkeypatch: pytest.MonkeyPatch) -> None:
     chunks = [_chunk(1, score=2.0), _chunk(2, score=1.0)]
     added = _install_mocks(monkeypatch, chunks, "unused")
