@@ -16,6 +16,13 @@ concurrency:
 
 jobs:
   golden:
+    # Skip on PRs that can't see the gateway secret — dependabot and forks get an
+    # empty key, so the ingest step would 401 and the check would go red and block
+    # the merge. Manual runs and same-repo PRs still run.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.actor != 'dependabot[bot]' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     defaults:
       run:
