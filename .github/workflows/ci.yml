@@ -25,6 +25,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:web
       - run: pnpm typecheck:web
+      - run: pnpm test:web
       - run: pnpm build:web
         env:
           # placeholder values so the env validation (which is the point)
