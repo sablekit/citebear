@@ -1,17 +1,24 @@
-"""Alembic environment: resolves the URL from validated app settings."""
+"""Alembic environment: resolves DATABASE_URL itself so migrations run
+in environments that lack the app's other required settings."""
 
 from alembic import context
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine, pool
 
-from citebear_api.config import get_settings
 from citebear_api.db import async_database_url
 from citebear_api.models import Base
 
 target_metadata = Base.metadata
 
 
+class _MigrationSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    database_url: str
+
+
 def _database_url() -> str:
-    return async_database_url(get_settings().database_url)
+    return async_database_url(_MigrationSettings().database_url)  # pyright: ignore[reportCallIssue]
 
 
 def run_migrations_offline() -> None:
