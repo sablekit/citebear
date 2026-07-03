@@ -28,6 +28,10 @@ class ChunkDraft:
 
     ordinal: int
     content: str
+    # what gets embedded — equal to content, except continuation chunks (the 2nd+
+    # piece of a split section) carry the section trail so they keep the topical
+    # anchor the first piece has from its heading (#7)
+    embed_text: str
     token_count: int
     section_path: list[str] = field(default_factory=list[str])
     page_start: int | None = None
@@ -89,14 +93,19 @@ def chunk_markdown(text: str) -> list[ChunkDraft]:
         body = section.page_content.strip()
         if not body:
             continue
-        for piece in _split_section(heading_line, body):
+        trail = " > ".join(section_path)
+        for piece_index, piece in enumerate(_split_section(heading_line, body)):
             content = piece.strip()
             if not content:
                 continue
+            # the first piece already carries the heading; continuation pieces
+            # get the trail prepended for embedding only (#7)
+            embed_text = f"{trail}\n\n{content}" if piece_index and trail else content
             drafts.append(
                 ChunkDraft(
                     ordinal=len(drafts),
                     content=content,
+                    embed_text=embed_text,
                     token_count=count_tokens(content),
                     section_path=section_path,
                 )

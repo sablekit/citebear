@@ -105,3 +105,29 @@ def test_markdown_chunks_have_no_pages() -> None:
     chunks = chunk_markdown("# A\n\nBody.")
     assert chunks[0].page_start is None
     assert chunks[0].page_end is None
+
+
+def test_first_piece_embeds_its_own_content() -> None:
+    # a short section is a single (first) piece: embed_text == content, no trail
+    chunks = chunk_markdown("# Install\n\nRun the installer.")
+    assert chunks[0].embed_text == chunks[0].content
+
+
+def test_continuation_pieces_embed_the_section_trail() -> None:
+    text = f"# Install\n\n## Linux\n\n{_long_paragraphs(120)}"
+    chunks = chunk_markdown(text)
+    assert len(chunks) > 1
+    trail = "Install > Linux"
+    # first piece keeps its heading; embed_text is just its content
+    assert chunks[0].embed_text == chunks[0].content
+    # continuation pieces prepend the trail for embedding, content unchanged
+    for chunk in chunks[1:]:
+        assert chunk.embed_text == f"{trail}\n\n{chunk.content}"
+        assert not chunk.content.startswith(trail)
+
+
+def test_continuation_without_heading_has_no_trail() -> None:
+    # preamble before any heading -> empty section_path -> no trail even on splits
+    chunks = chunk_markdown(_long_paragraphs(120))
+    assert len(chunks) > 1
+    assert all(chunk.embed_text == chunk.content for chunk in chunks)
