@@ -153,10 +153,10 @@ acceptable and documented.
 
 Schema migrations are managed with **Alembic** from day one.
 
-Primary keys default to `uuidv7()` when Neon runs Postgres ≥ 18 (verified in
-Milestone 0), else `gen_random_uuid()`. UUIDv7's timestamp prefix keeps B-tree
-inserts append-only. External JSON is camelCase (pydantic alias generators);
-SQL and Python stay snake_case.
+Primary keys default to `uuidv7()`, native in Postgres 18. Its timestamp prefix
+keeps B-tree inserts append-mostly, avoiding the index-page splits that fully
+random `gen_random_uuid()` (v4) causes. External JSON is camelCase (pydantic
+alias generators); SQL and Python stay snake_case.
 
 ## 5. RAG pipeline
 

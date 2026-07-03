@@ -47,7 +47,7 @@ fails on any DB call).
 - **Errors are RFC 9457 Problem Details** (`application/problem+json`)
   everywhere, including SSE error events. No custom error envelopes.
 - **Postgres:** snake_case; plural table names, singular columns; foreign keys
-  `<singular>_id`; `timestamptz` in UTC; primary keys `gen_random_uuid()`.
+  `<singular>_id`; `timestamptz` in UTC; primary keys `uuidv7()` (Postgres 18).
   Migrations via Alembic.
 - **Config is env-only and validated at startup:** pydantic-settings (api),
   `@t3-oss/env-nextjs` (web). Missing config fails the boot, not the request.

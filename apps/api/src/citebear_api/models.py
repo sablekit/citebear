@@ -1,7 +1,7 @@
 """Database schema (SPEC §4).
 
 snake_case, plural tables, singular columns, timestamptz UTC,
-gen_random_uuid() primary keys. Migrations live in migrations/.
+uuidv7() primary keys (Postgres 18). Migrations live in migrations/.
 """
 
 import uuid
@@ -24,7 +24,7 @@ class Document(Base):
     __tablename__ = "documents"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+        UUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()")
     )
     title: Mapped[str] = mapped_column(Text)
     filename: Mapped[str] = mapped_column(Text)
@@ -42,7 +42,7 @@ class Chunk(Base):
     __tablename__ = "chunks"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+        UUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()")
     )
     document_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE")
@@ -71,7 +71,7 @@ class Message(Base):
     __tablename__ = "messages"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+        UUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()")
     )
     session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     role: Mapped[str] = mapped_column(Text)  # user | assistant
