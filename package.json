@@ -5,7 +5,8 @@
     "dev:web": "pnpm --filter web dev",
     "lint:web": "pnpm --filter web lint",
     "typecheck:web": "pnpm --filter web typecheck",
-    "build:web": "pnpm --filter web build"
+    "build:web": "pnpm --filter web build",
+    "test:web": "pnpm --filter web test"
   },
   "packageManager": "pnpm@10.22.0",
   "pnpm": {
