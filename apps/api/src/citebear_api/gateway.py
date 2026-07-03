@@ -34,3 +34,14 @@ def get_chat_model() -> ChatOpenAI:
         api_key=SecretStr(settings.gateway_api_key),
         temperature=0.0,  # grounded QA: no creativity wanted
     )
+
+
+@lru_cache
+def get_rerank_model() -> ChatOpenAI:
+    settings = get_settings()
+    return ChatOpenAI(
+        model=settings.rerank_model,
+        base_url=settings.gateway_base_url,
+        api_key=SecretStr(settings.gateway_api_key),
+        temperature=0.0,  # deterministic scoring
+    )

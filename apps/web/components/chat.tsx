@@ -6,7 +6,12 @@ import { memo, useCallback, useState } from "react";
 
 import { AnswerContent } from "./answer-content";
 import { SourcePanel } from "./source-panel";
-import { SOURCES_DATA_PART, type Citation, type CitebearUIMessage } from "@/lib/chat-events";
+import {
+  SOURCES_DATA_PART,
+  type Citation,
+  type CitebearUIMessage,
+  type SourcesData,
+} from "@/lib/chat-events";
 
 const SUGGESTIONS = [
   "How does hybrid retrieval work?",
@@ -20,13 +25,11 @@ function messageText(message: CitebearUIMessage): string {
     .join("");
 }
 
-function citationsOf(message: CitebearUIMessage): Map<number, Citation> {
+function sourcesOf(message: CitebearUIMessage): SourcesData | null {
   for (const part of message.parts) {
-    if (part.type === SOURCES_DATA_PART) {
-      return new Map(part.data.citations.map((citation) => [citation.marker, citation]));
-    }
+    if (part.type === SOURCES_DATA_PART) return part.data;
   }
-  return new Map();
+  return null;
 }
 
 function lastUserText(messages: CitebearUIMessage[]): string {
@@ -45,9 +48,22 @@ const AssistantMessage = memo(function AssistantMessage({
   message: CitebearUIMessage;
   onSelect: (citation: Citation) => void;
 }) {
+  const sources = sourcesOf(message);
+  const citations = new Map((sources?.citations ?? []).map((c) => [c.marker, c]));
+  // flag a weak answer, but not a refusal (which carries no citations and says
+  // so in its own text) — SPEC §5.3
+  const lowConfidence = sources?.confidence === "low" && citations.size > 0;
   return (
     <li className="max-w-full self-start rounded-2xl rounded-bl-sm border border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
-      <AnswerContent text={messageText(message)} citations={citationsOf(message)} onSelect={onSelect} />
+      {lowConfidence && (
+        <p
+          className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+          title="The sources only weakly match your question — verify against the cited passages."
+        >
+          Low confidence
+        </p>
+      )}
+      <AnswerContent text={messageText(message)} citations={citations} onSelect={onSelect} />
     </li>
   );
 });

@@ -21,6 +21,8 @@ from sqlalchemy import select
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from citebear_api.citations import build_citations, cited_markers
+from citebear_api.condense import condense_question
+from citebear_api.confidence import LOW, assess
 from citebear_api.config import get_settings
 from citebear_api.db import get_session_factory
 from citebear_api.events import (
@@ -30,10 +32,11 @@ from citebear_api.events import (
     sources_event,
     token_event,
 )
-from citebear_api.generation import is_refusal, stream_answer
+from citebear_api.generation import REFUSAL_TEXT, is_refusal, stream_answer
 from citebear_api.models import Message, MessageCitation
 from citebear_api.problems import problem
-from citebear_api.retrieval import embed_query, retrieve
+from citebear_api.rerank import RerankUnavailable, get_reranker
+from citebear_api.retrieval import FINAL_TOP_K, embed_query, hybrid_retrieve
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +84,6 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
     settings = get_settings()
     session_factory = get_session_factory()
     try:
-        # gateway round trip first, so no DB connection is held across it
-        query_vector = await embed_query(turn.message)
         async with session_factory() as db:
             history_rows = (
                 await db.execute(
@@ -101,20 +102,45 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
                     ip_hash=turn.ip_hash,
                 )
             )
-            chunks = await retrieve(db, query_vector)
             await db.commit()
 
-        # sources before tokens: the UI renders citation chips while the answer
-        # is still being written (SPEC §5.4)
-        citations = build_citations(chunks)
-        yield sources_event(citations)
+        # follow-ups elide their subject, so retrieval runs on a standalone
+        # question rewritten from the history (SPEC §5.3); the first turn has no
+        # history and skips the call. Gateway round trips (condense, embed) stay
+        # outside the write transaction above so no DB connection is held.
+        query = await condense_question(turn.message, history)
+        query_vector = await embed_query(query)
+
+        # hybrid retrieval runs on its own sessions (vector ∥ keyword); the
+        # reranker then reorders the candidates by relevance and we keep the top-5
+        candidates = await hybrid_retrieve(session_factory, query, query_vector)
+        try:
+            reranked = await get_reranker().rerank(query, candidates)
+            chunks = reranked[:FINAL_TOP_K]
+            confidence, should_generate = assess(chunks)
+        except RerankUnavailable:
+            # scoring glitch, not a retrieval miss: answer from the fusion order
+            # at low confidence rather than refusing good candidates
+            chunks = candidates[:FINAL_TOP_K]
+            confidence, should_generate = LOW, bool(chunks)
 
         parts: list[str] = []
-        async for delta in stream_answer(turn.message, chunks, history):
-            parts.append(delta)
-            yield token_event(delta)
-        answer = "".join(parts)
-        grounded = not is_refusal(answer)
+        if should_generate:
+            # sources before tokens: the UI renders citation chips while the
+            # answer is still being written (SPEC §5.4)
+            yield sources_event(build_citations(chunks), confidence)
+            async for delta in stream_answer(turn.message, chunks, history):
+                parts.append(delta)
+                yield token_event(delta)
+            answer = "".join(parts)
+            grounded = not is_refusal(answer)
+        else:
+            # nothing cleared the threshold: refuse without calling the generator
+            # (SPEC §5.3). No chunk is trustworthy enough to cite.
+            yield sources_event([], confidence)
+            answer = REFUSAL_TEXT
+            yield token_event(answer)
+            grounded = False
 
         async with session_factory() as db:
             assistant_message = Message(
@@ -122,6 +148,7 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
                 role="assistant",
                 content=answer,
                 grounded=grounded,
+                confidence=confidence,
                 model=settings.chat_model,
                 latency_ms=int((time.monotonic() - started) * 1000),
             )

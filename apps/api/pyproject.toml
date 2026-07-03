@@ -55,3 +55,7 @@ reportUnknownArgumentType = "none"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# the golden set needs a live DB + gateway and costs tokens, so it is excluded
+# from the every-push run; the golden workflow opts in with `-m golden` (SPEC §9)
+addopts = "-m 'not golden'"
+markers = ["golden: retrieval golden set; needs a live DB + gateway"]

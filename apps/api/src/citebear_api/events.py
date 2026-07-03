@@ -19,10 +19,6 @@ SOURCES = "sources"
 DONE = "done"
 ERROR = "error"
 
-# Confidence is a constant until the rerank-score threshold lands (SPEC §5.3,
-# Milestone 3); the UI ignores the field until then.
-CONFIDENCE_PLACEHOLDER = "high"
-
 
 @dataclass(frozen=True)
 class ChatEvent:
@@ -48,7 +44,7 @@ def token_event(delta: str) -> ChatEvent:
     return ChatEvent(TOKEN, {"delta": delta})
 
 
-def sources_event(citations: list[Citation], confidence: str = CONFIDENCE_PLACEHOLDER) -> ChatEvent:
+def sources_event(citations: list[Citation], confidence: str) -> ChatEvent:
     return ChatEvent(
         SOURCES,
         {

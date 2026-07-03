@@ -1,0 +1,62 @@
+name: Golden retrieval
+
+# The golden set needs live model API keys and costs tokens, so it runs only on
+# demand and on PRs to main — never in the every-push CI loop (SPEC §9).
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: golden-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  golden:
+    # Skip on PRs that can't see the gateway secret — dependabot and forks get an
+    # empty key, so the ingest step would 401 and the check would go red and block
+    # the merge. Manual runs and same-repo PRs still run.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.actor != 'dependabot[bot]' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: citebear
+          POSTGRES_PASSWORD: citebear
+          POSTGRES_DB: citebear
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U citebear -d citebear"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://citebear:citebear@localhost:5432/citebear
+      GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
+      INTERNAL_API_KEY: golden-ci-placeholder # golden hits the pipeline directly, not the HTTP auth
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      - run: uv sync --locked
+      - run: uv run alembic upgrade head
+      - name: Ingest the self-owned corpus
+        run: |
+          uv run python -m citebear_api.ingest ../../docs/SPEC.md \
+            --title "CiteBear Specification" \
+            --source-url https://github.com/sablekit/citebear/blob/main/docs/SPEC.md
+          uv run python -m citebear_api.ingest ../../README.md \
+            --title "CiteBear README" \
+            --source-url https://github.com/sablekit/citebear/blob/main/README.md
+          uv run python -m citebear_api.ingest ../../AGENTS.md \
+            --title "CiteBear Agent & Contributor Context" \
+            --source-url https://github.com/sablekit/citebear/blob/main/AGENTS.md
+      - run: uv run pytest -m golden tests/golden -q

@@ -50,7 +50,7 @@ async def ingest_markdown(path: Path, title: str, source_url: str) -> tuple[uuid
         await session.commit()
 
     try:
-        vectors = await get_embeddings().aembed_documents([draft.content for draft in drafts])
+        vectors = await get_embeddings().aembed_documents([draft.embed_text for draft in drafts])
         async with session_factory() as session:
             session.add_all(
                 Chunk(

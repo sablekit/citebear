@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from citebear_api.citations import build_citations, cited_markers
-from citebear_api.events import CONFIDENCE_PLACEHOLDER, sources_event
+from citebear_api.events import sources_event
 from citebear_api.retrieval import RetrievedChunk
 
 
@@ -28,9 +28,9 @@ def test_build_citations_numbers_from_one() -> None:
 
 
 def test_sources_event_is_camelcase() -> None:
-    event = sources_event(build_citations([_chunk(1)]))
+    event = sources_event(build_citations([_chunk(1)]), "high")
     assert event.event == "sources"
-    assert event.data["confidence"] == CONFIDENCE_PLACEHOLDER
+    assert event.data["confidence"] == "high"
     citation = event.data["citations"][0]
     assert set(citation) == {
         "marker",
