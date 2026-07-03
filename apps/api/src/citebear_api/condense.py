@@ -10,9 +10,13 @@ The first message of a session has no history and skips the call entirely
 (SPEC §5.5 fast path) — a purely structural check, not a semantic judgement.
 """
 
+import logging
+
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from citebear_api.gateway import get_chat_model
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You rewrite a user's latest message into a standalone question \
 for a document search.
@@ -37,5 +41,13 @@ async def condense_question(message: str, history: list[tuple[str, str]]) -> str
         f"Conversation:\n{_format_history(history)}\n\n"
         f"Latest message: {message}\n\nStandalone question:"
     )
-    response = await get_chat_model().ainvoke([SystemMessage(SYSTEM_PROMPT), HumanMessage(prompt)])
+    try:
+        response = await get_chat_model().ainvoke(
+            [SystemMessage(SYSTEM_PROMPT), HumanMessage(prompt)]
+        )
+    except Exception:
+        # a condense-call blip must not sink the whole turn: retrieval can still
+        # proceed on the raw message (this is exactly the M1 fast path)
+        logger.warning("condense failed; falling back to the raw message")
+        return message
     return response.text.strip() or message

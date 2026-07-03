@@ -55,3 +55,16 @@ def test_empty_rewrite_falls_back_to_original(monkeypatch: pytest.MonkeyPatch) -
     result = asyncio.run(condense_question("is it free?", [("user", "hi")]))
 
     assert result == "is it free?"
+
+
+def test_gateway_failure_falls_back_to_original(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FailingModel:
+        async def ainvoke(self, _messages: object) -> object:
+            raise RuntimeError("429 rate limited")
+
+    monkeypatch.setattr(condense, "get_chat_model", lambda: _FailingModel())
+
+    # a condense-call failure must not sink the turn — retrieval proceeds on the raw message
+    result = asyncio.run(condense_question("is it free?", [("user", "What database?")]))
+
+    assert result == "is it free?"
