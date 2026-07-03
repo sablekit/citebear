@@ -229,11 +229,17 @@ swappable behind an interface (`Reranker` protocol) for a cross-encoder later.
 `POST /chat` responds with SSE. Event sequence:
 
 ```
-event: sources   data: {"citations":[{"marker":1,"chunkId":"…","docTitle":"…","page":12,"snippet":"…"}], "confidence":"high"}
+event: sources   data: {"citations":[{"marker":1,"chunkId":"…","docTitle":"…","page":12,"sectionPath":["Install","Linux"],"sourceUrl":"…","snippet":"…"}], "confidence":"high"}
 event: token     data: {"delta":"The install requires"}   (repeated)
 event: done      data: {"messageId":"…","grounded":true}
 event: error     data: {"type":"…","title":"…","status":500,"detail":"…"}
 ```
+
+Each citation carries what the source panel renders: `marker` (the `[n]` shown
+in the answer), `chunkId`, `docTitle`, `page`, `sectionPath` (heading trail),
+`sourceUrl` (the original file — `#page=` appended for PDFs), and `snippet` (the
+cited passage). `confidence` is a constant `"high"` in v1 until the rerank-score
+threshold lands (5.3, Milestone 3); the UI ignores it until then.
 
 `sources` is sent **before** tokens so the UI can render citation chips
 immediately. The web app proxies this stream through a Next.js route handler

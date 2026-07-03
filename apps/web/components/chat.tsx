@@ -1,8 +1,12 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, type UIMessage } from "ai";
-import { useState } from "react";
+import { DefaultChatTransport } from "ai";
+import { memo, useCallback, useState } from "react";
+
+import { AnswerContent } from "./answer-content";
+import { SourcePanel } from "./source-panel";
+import { SOURCES_DATA_PART, type Citation, type CitebearUIMessage } from "@/lib/chat-events";
 
 const SUGGESTIONS = [
   "How does hybrid retrieval work?",
@@ -10,30 +14,63 @@ const SUGGESTIONS = [
   "How are documents chunked?",
 ];
 
-function messageText(message: UIMessage): string {
+function messageText(message: CitebearUIMessage): string {
   return message.parts
     .map((part) => (part.type === "text" ? part.text : ""))
     .join("");
 }
 
-function lastUserText(messages: UIMessage[]): string {
+function citationsOf(message: CitebearUIMessage): Map<number, Citation> {
+  for (const part of message.parts) {
+    if (part.type === SOURCES_DATA_PART) {
+      return new Map(part.data.citations.map((citation) => [citation.marker, citation]));
+    }
+  }
+  return new Map();
+}
+
+function lastUserText(messages: CitebearUIMessage[]): string {
   const last = messages.at(-1);
   return last?.role === "user" ? messageText(last) : "";
 }
+
+// Memoized so a finished answer is not re-parsed through the markdown pipeline
+// on every token of a later answer; useChat keeps finished message objects
+// stable by reference, and onSelect is stable, so only the streaming message
+// re-renders.
+const AssistantMessage = memo(function AssistantMessage({
+  message,
+  onSelect,
+}: {
+  message: CitebearUIMessage;
+  onSelect: (citation: Citation) => void;
+}) {
+  return (
+    <li className="max-w-full self-start rounded-2xl rounded-bl-sm border border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
+      <AnswerContent text={messageText(message)} citations={citationsOf(message)} onSelect={onSelect} />
+    </li>
+  );
+});
 
 export function Chat() {
   const [sessionId] = useState(() => crypto.randomUUID());
   const [transport] = useState(
     () =>
-      new DefaultChatTransport({
+      new DefaultChatTransport<CitebearUIMessage>({
         api: "/api/chat",
         prepareSendMessagesRequest: ({ messages }) => ({
           body: { sessionId, message: lastUserText(messages) },
         }),
       }),
   );
-  const { messages, sendMessage, status, error, clearError } = useChat({ transport });
+  const { messages, sendMessage, status, error, clearError } = useChat<CitebearUIMessage>({
+    transport,
+  });
   const [input, setInput] = useState("");
+  const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
+  // stable identity: the panel's focus/keydown effect must not re-run (and
+  // steal focus) on every streamed token
+  const closePanel = useCallback(() => setActiveCitation(null), []);
 
   const busy = status === "submitted" || status === "streaming";
 
@@ -78,18 +115,18 @@ export function Chat() {
         )}
 
         <ol className="flex flex-col gap-4" aria-live="polite">
-          {messages.map((message) => (
-            <li
-              key={message.id}
-              className={
-                message.role === "user"
-                  ? "self-end rounded-2xl rounded-br-sm bg-zinc-900 px-4 py-2.5 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900"
-                  : "self-start whitespace-pre-wrap rounded-2xl rounded-bl-sm border border-zinc-200 px-4 py-2.5 dark:border-zinc-800"
-              }
-            >
-              {messageText(message)}
-            </li>
-          ))}
+          {messages.map((message) =>
+            message.role === "user" ? (
+              <li
+                key={message.id}
+                className="self-end whitespace-pre-wrap rounded-2xl rounded-br-sm bg-zinc-900 px-4 py-2.5 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900"
+              >
+                {messageText(message)}
+              </li>
+            ) : (
+              <AssistantMessage key={message.id} message={message} onSelect={setActiveCitation} />
+            ),
+          )}
           {status === "submitted" && (
             <li className="self-start px-4 py-2 text-sm text-zinc-400" aria-label="Thinking">
               Retrieving sources…
@@ -135,6 +172,8 @@ export function Chat() {
           </button>
         </form>
       </footer>
+
+      <SourcePanel citation={activeCitation} onClose={closePanel} />
     </div>
   );
 }

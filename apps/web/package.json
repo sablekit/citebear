@@ -12,14 +12,20 @@
   "dependencies": {
     "@ai-sdk/react": "^4.0.15",
     "@t3-oss/env-nextjs": "^0.13.11",
+    "@vercel/analytics": "^2.0.1",
     "ai": "^7.0.14",
     "next": "16.2.10",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "unist-util-visit": "^5.1.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/hast": "^3.0.4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

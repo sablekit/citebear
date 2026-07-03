@@ -1,7 +1,7 @@
 """POST /chat: retrieval-grounded streaming answers over SSE (SPEC §5.4).
 
-Milestone 1 event sequence: token* -> done (or error). The sources
-event joins the sequence in Milestone 2.
+Event sequence: sources -> token* -> done (or error). The sources event is sent
+before the first token so the UI can render citation chips immediately.
 """
 
 import hashlib
@@ -12,7 +12,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,10 +20,18 @@ from pydantic.alias_generators import to_camel
 from sqlalchemy import select
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
+from citebear_api.citations import build_citations, cited_markers
 from citebear_api.config import get_settings
 from citebear_api.db import get_session_factory
+from citebear_api.events import (
+    ChatEvent,
+    done_event,
+    error_event,
+    sources_event,
+    token_event,
+)
 from citebear_api.generation import is_refusal, stream_answer
-from citebear_api.models import Message
+from citebear_api.models import Message, MessageCitation
 from citebear_api.problems import problem
 from citebear_api.retrieval import embed_query, retrieve
 
@@ -46,12 +54,6 @@ class ChatTurn:
     session_id: uuid.UUID
     message: str
     ip_hash: str | None
-
-
-@dataclass(frozen=True)
-class ChatEvent:
-    event: str
-    data: dict[str, Any]
 
 
 ChatStream = Callable[[ChatTurn], AsyncIterator[ChatEvent]]
@@ -102,10 +104,15 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
             chunks = await retrieve(db, query_vector)
             await db.commit()
 
+        # sources before tokens: the UI renders citation chips while the answer
+        # is still being written (SPEC §5.4)
+        citations = build_citations(chunks)
+        yield sources_event(citations)
+
         parts: list[str] = []
         async for delta in stream_answer(turn.message, chunks, history):
             parts.append(delta)
-            yield ChatEvent("token", {"delta": delta})
+            yield token_event(delta)
         answer = "".join(parts)
         grounded = not is_refusal(answer)
 
@@ -121,14 +128,25 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
             db.add(assistant_message)
             await db.flush()
             message_id = assistant_message.id
+            # post-check: persist only the citations the answer actually used and
+            # that map to a real chunk (SPEC §5.3)
+            for marker in cited_markers(answer, len(chunks)):
+                chunk = chunks[marker - 1]
+                db.add(
+                    MessageCitation(
+                        message_id=message_id,
+                        marker=marker,
+                        chunk_id=chunk.chunk_id,
+                        score=chunk.score,
+                    )
+                )
             await db.commit()
 
-        yield ChatEvent("done", {"messageId": str(message_id), "grounded": grounded})
+        yield done_event(message_id, grounded)
     except Exception:
         logger.exception("chat turn failed")
-        yield ChatEvent(
-            "error",
-            problem(500, "Internal Server Error", "The answer could not be generated."),
+        yield error_event(
+            problem(500, "Internal Server Error", "The answer could not be generated.")
         )
 
 
