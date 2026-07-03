@@ -26,10 +26,24 @@ class RetrievedChunk:
     page_end: int | None
 
 
-async def retrieve(session: AsyncSession, question: str) -> list[RetrievedChunk]:
-    query_vector = await get_embeddings().aembed_query(question)
+async def embed_query(question: str) -> list[float]:
+    """Kept separate from the search so callers never hold a DB
+    connection across this gateway round trip."""
+    return await get_embeddings().aembed_query(question)
+
+
+async def retrieve(session: AsyncSession, query_vector: list[float]) -> list[RetrievedChunk]:
     statement = (
-        select(Chunk, Document.title)
+        # explicit columns: a full Chunk row would drag each result's
+        # 1536-dim embedding and tsvector back over the wire unused
+        select(
+            Chunk.id,
+            Chunk.content,
+            Chunk.section_path,
+            Chunk.page_start,
+            Chunk.page_end,
+            Document.title,
+        )
         .join(Document, Chunk.document_id == Document.id)
         .where(Document.status == "ready")
         .order_by(Chunk.embedding.cosine_distance(query_vector))  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
@@ -38,12 +52,12 @@ async def retrieve(session: AsyncSession, question: str) -> list[RetrievedChunk]
     rows = (await session.execute(statement)).all()
     return [
         RetrievedChunk(
-            chunk_id=chunk.id,
-            document_title=title,
-            content=chunk.content,
-            section_path=chunk.section_path or [],
-            page_start=chunk.page_start,
-            page_end=chunk.page_end,
+            chunk_id=row.id,
+            document_title=row.title,
+            content=row.content,
+            section_path=row.section_path or [],
+            page_start=row.page_start,
+            page_end=row.page_end,
         )
-        for chunk, title in rows
+        for row in rows
     ]

@@ -25,7 +25,7 @@ from citebear_api.db import get_session_factory
 from citebear_api.generation import is_refusal, stream_answer
 from citebear_api.models import Message
 from citebear_api.problems import problem
-from citebear_api.retrieval import retrieve
+from citebear_api.retrieval import embed_query, retrieve
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,8 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
     settings = get_settings()
     session_factory = get_session_factory()
     try:
+        # gateway round trip first, so no DB connection is held across it
+        query_vector = await embed_query(turn.message)
         async with session_factory() as db:
             history_rows = (
                 await db.execute(
@@ -97,7 +99,7 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
                     ip_hash=turn.ip_hash,
                 )
             )
-            chunks = await retrieve(db, turn.message)
+            chunks = await retrieve(db, query_vector)
             await db.commit()
 
         parts: list[str] = []
