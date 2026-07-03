@@ -51,6 +51,12 @@ async def _validation_handler(_request: Request, exc: Exception) -> JSONResponse
     return problem_response(422, "Unprocessable Entity", str(exc))
 
 
+async def _unhandled_handler(_request: Request, _exc: Exception) -> JSONResponse:
+    # no detail: unhandled exception text can leak internals
+    return problem_response(500, "Internal Server Error")
+
+
 def install_problem_handlers(app: FastAPI) -> None:
     app.add_exception_handler(StarletteHTTPException, _http_exception_handler)
     app.add_exception_handler(RequestValidationError, _validation_handler)
+    app.add_exception_handler(Exception, _unhandled_handler)
