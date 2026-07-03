@@ -347,11 +347,14 @@ Focus: the retrieval pipeline is the product — test it like one.
   across boundaries), RRF fusion, citation post-check, confidence mapping.
 - **Integration:** ingestion → retrieval round-trip against a real Postgres
   (docker-compose / Neon branch) with a small fixture document set.
-- **Golden retrieval set:** ~15 question→expected-chunk pairs over the
-  preloaded library; asserts the expected chunk appears in top-5. Guards against
-  chunking/retrieval regressions. Runs as a **manually-triggered workflow and
-  on PRs to main only** — it needs live model API keys and costs tokens, so it
-  stays out of the every-push CI loop (unit tests cover every push).
+- **Golden retrieval set:** ~15 question→expected-chunk pairs; asserts the
+  expected chunk appears in top-5. Guards against chunking/retrieval
+  regressions. At M3 the corpus is CiteBear's own self-owned Markdown (SPEC.md,
+  README.md, AGENTS.md), which is what is ingestable before the upload pipeline
+  (M4); it expands to the full preloaded library at M6. Runs as a
+  **manually-triggered workflow and on PRs to main only** — it needs live model
+  API keys and costs tokens, so it stays out of the every-push CI loop (unit
+  tests cover every push).
 - **Web:** type-checked strict; component tests only for citation-marker
   parsing/rendering logic.
 
