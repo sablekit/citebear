@@ -315,7 +315,7 @@ Routes:
 
 Stack: App Router, TypeScript strict, Tailwind, Vercel AI SDK (`useChat` with
 a custom data-stream adapter for the `sources` event). No component library
-in v1; hand-rolled UI keeps the design-quality signal high.
+in v1; hand-rolled UI means full control over styling with no dependency weight.
 
 ## 8. Configuration
 
@@ -355,13 +355,13 @@ Focus: the retrieval pipeline is the product — test it like one.
 | 0 | Monorepo scaffold; hello-world web + api deployed; Neon provisioned; CI (lint, typecheck, pytest) | Deploy pipeline works; Fluid-vs-Railway decision made via a synthetic long-request test approximating worst-case ingestion |
 | 1 | Vertical slice: hardcoded doc → chunks → vector-only retrieval → streamed grounded answer | End-to-end RAG loop live |
 | 2 | Citations end-to-end: markers, sources event, source panel with highlight | The flagship feature |
-| 3 | Hybrid retrieval + rerank + confidence/refusal; golden retrieval tests | The retrieval depth clients ask for |
+| 3 | Hybrid retrieval + rerank + confidence/refusal; golden retrieval tests | Retrieval depth: exact terms + paraphrase, reranked and cited |
 | 4 | Upload pipeline (PDF/DOCX/MD) + admin documents tab | Self-serve ingestion |
 | 5 | Question log, feedback, stats; rate limiting; polish | Support-bot story complete |
-| 6 | README case study (banner, architecture diagram, design notes, GIF), preloaded library shipped | The portfolio artifact |
+| 6 | README case study (banner, architecture diagram, design notes, GIF), preloaded library shipped | Complete product: documented and self-hostable |
 
-Each milestone lands as small conventional commits via PR — the git history is
-part of the deliverable.
+Each milestone lands as small conventional commits via PR — every commit stays
+small, green, and bisectable.
 
 ## 11. Preloaded document library (decided 2026-07-02)
 
