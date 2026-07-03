@@ -2,6 +2,7 @@ import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 
 import { env } from "@/env";
 import {
+  SOURCES_DATA_PART,
   SOURCES_PART,
   SSE_EVENT,
   type CitebearUIMessage,
@@ -108,7 +109,7 @@ export async function POST(request: Request): Promise<Response> {
           // fired before tokens: surfaced as a data part so the message carries
           // its own citations. A fixed id keeps it reconciled to one part.
           writer.write({
-            type: `data-${SOURCES_PART}`,
+            type: SOURCES_DATA_PART,
             id: SOURCES_PART,
             data: JSON.parse(data) as SourcesData,
           });

@@ -37,5 +37,8 @@ export interface SourcesData {
  */
 export const SOURCES_PART = "sources" as const;
 
+/** The message-part discriminant for the sources data part (`data-sources`). */
+export const SOURCES_DATA_PART: `data-${typeof SOURCES_PART}` = `data-${SOURCES_PART}`;
+
 /** The typed message the chat works with: text parts + a data-sources part. */
 export type CitebearUIMessage = UIMessage<unknown, { sources: SourcesData }>;
