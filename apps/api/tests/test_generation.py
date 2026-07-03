@@ -16,10 +16,12 @@ def _chunk(
     return RetrievedChunk(
         chunk_id=uuid4(),
         document_title=title,
+        source_url="https://example.com/spec",
         content=content,
         section_path=section_path or [],
         page_start=page_start,
         page_end=page_end,
+        score=0.9,
     )
 
 
