@@ -97,7 +97,7 @@ documents (
   title         text NOT NULL,
   filename      text NOT NULL,
   mime_type     text NOT NULL,            -- application/pdf, docx, text/markdown
-  blob_url      text NOT NULL,            -- Vercel Blob URL of the original
+  source_url    text NOT NULL,            -- URL of the original: Vercel Blob for uploads, canonical source link for the preloaded library
   status        text NOT NULL,            -- processing | ready | failed
   error         text,                     -- failure reason when status=failed
   page_count    int,
