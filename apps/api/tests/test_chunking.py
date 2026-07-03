@@ -1,0 +1,94 @@
+from itertools import pairwise
+
+import tiktoken
+
+from citebear_api.chunking import (
+    OVERLAP_TOKENS,
+    TARGET_TOKENS,
+    chunk_markdown,
+)
+
+
+def _long_paragraphs(sentences: int) -> str:
+    return " ".join(
+        f"Sentence number {i} talks about retrieval pipelines and vector search quality."
+        for i in range(sentences)
+    )
+
+
+def test_empty_document_yields_no_chunks() -> None:
+    assert chunk_markdown("") == []
+    assert chunk_markdown("   \n\n  ") == []
+
+
+def test_short_sections_stay_whole() -> None:
+    text = "# Install\n\nRun the installer.\n\n# Configure\n\nEdit the config file."
+    chunks = chunk_markdown(text)
+    assert len(chunks) == 2
+    assert "Run the installer." in chunks[0].content
+    assert "Edit the config file." in chunks[1].content
+
+
+def test_section_path_reflects_heading_trail() -> None:
+    text = "# Install\n\n## Linux\n\n### Debian\n\nUse apt to install the package."
+    chunks = chunk_markdown(text)
+    assert chunks[-1].section_path == ["Install", "Linux", "Debian"]
+
+
+def test_heading_line_is_preserved_in_content() -> None:
+    text = "# Install\n\nRun the installer."
+    chunks = chunk_markdown(text)
+    assert "# Install" in chunks[0].content
+
+
+def test_preamble_before_first_heading_has_empty_path() -> None:
+    text = "Intro paragraph before any heading.\n\n# First\n\nBody."
+    chunks = chunk_markdown(text)
+    assert chunks[0].section_path == []
+    assert "Intro paragraph" in chunks[0].content
+
+
+def test_oversized_section_splits_under_target() -> None:
+    text = f"# Big\n\n{_long_paragraphs(120)}"
+    chunks = chunk_markdown(text)
+    assert len(chunks) > 1
+    assert all(c.token_count <= TARGET_TOKENS for c in chunks)
+    # all pieces of the split section keep the section's heading trail
+    assert all(c.section_path == ["Big"] for c in chunks)
+
+
+def test_oversized_section_split_has_overlap() -> None:
+    text = f"# Big\n\n{_long_paragraphs(120)}"
+    chunks = chunk_markdown(text)
+    assert len(chunks) > 1
+    # consecutive chunks share content: the tail of one reappears in the next
+    for prev, nxt in pairwise(chunks):
+        tail = prev.content[-40:]
+        assert tail in nxt.content or OVERLAP_TOKENS == 0
+
+
+def test_chunks_never_cross_heading_boundary() -> None:
+    text = f"# Alpha\n\n{_long_paragraphs(120)}\n\n# Omega\n\nUnique omega marker sentence."
+    chunks = chunk_markdown(text)
+    for chunk in chunks:
+        crosses = "Sentence number" in chunk.content and "omega marker" in chunk.content
+        assert not crosses
+
+
+def test_ordinals_are_sequential_from_zero() -> None:
+    text = f"# A\n\n{_long_paragraphs(120)}\n\n# B\n\nShort."
+    chunks = chunk_markdown(text)
+    assert [c.ordinal for c in chunks] == list(range(len(chunks)))
+
+
+def test_token_count_matches_encoder() -> None:
+    text = "# A\n\nSome plain content."
+    chunks = chunk_markdown(text)
+    encoding = tiktoken.get_encoding("cl100k_base")
+    assert chunks[0].token_count == len(encoding.encode(chunks[0].content))
+
+
+def test_markdown_chunks_have_no_pages() -> None:
+    chunks = chunk_markdown("# A\n\nBody.")
+    assert chunks[0].page_start is None
+    assert chunks[0].page_end is None

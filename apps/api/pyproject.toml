@@ -6,10 +6,12 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.14",
     "fastapi>=0.115",
+    "langchain-text-splitters>=0.3",
     "pgvector>=0.3",
     "psycopg[binary]>=3.2",
     "pydantic-settings>=2.7",
     "sqlalchemy[asyncio]>=2.0.36",
+    "tiktoken>=0.8",
     "uvicorn[standard]>=0.34",
 ]
 
