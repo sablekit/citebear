@@ -60,4 +60,5 @@ def test_messages_order_history_then_question() -> None:
 def test_refusal_detection() -> None:
     assert is_refusal(REFUSAL_TEXT)
     assert is_refusal("  I don't know based on the provided documents. ")
+    assert is_refusal("I don’t know based on the provided documents.")  # noqa: RUF001
     assert not is_refusal("The rate limit is 20 requests per hour. [1]")

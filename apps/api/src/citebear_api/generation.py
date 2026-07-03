@@ -61,7 +61,10 @@ def build_messages(
 
 
 def is_refusal(answer: str) -> bool:
-    return answer.strip().startswith(REFUSAL_PREFIX)
+    # models sometimes normalize the straight apostrophe to a typographic
+    # one even when quoting; the string heuristic itself is interim until
+    # Milestone 3's confidence threshold
+    return answer.strip().replace("’", "'").startswith(REFUSAL_PREFIX)  # noqa: RUF001
 
 
 async def stream_answer(
