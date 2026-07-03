@@ -136,7 +136,8 @@ async def hybrid_retrieve(
             return await keyword_search(db, query_text)
 
     vector_hits, keyword_hits = await asyncio.gather(_vector(), _keyword())
-    # vector's score wins ties (its entries overwrite keyword's in the dict)
+    # dedup across both lists; either representative row is fine since the
+    # reranker re-scores every chunk — RRF rank (from `fused`) is what orders them
     by_id = {c.chunk_id: c for c in (*keyword_hits, *vector_hits)}
     fused = reciprocal_rank_fusion(
         [[c.chunk_id for c in vector_hits], [c.chunk_id for c in keyword_hits]]
