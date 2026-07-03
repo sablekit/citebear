@@ -1,11 +1,17 @@
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 
 import { env } from "@/env";
+import {
+  SOURCES_PART,
+  SSE_EVENT,
+  type CitebearUIMessage,
+  type SourcesData,
+} from "@/lib/chat-events";
 
 /**
  * Streaming proxy: forwards the chat request to the Python API (adding the
  * internal key and the visitor's IP) and adapts its SSE protocol
- * (token / done / error, SPEC §5.4) to the AI SDK UI message stream.
+ * (sources / token / done / error, SPEC §5.4) to the AI SDK UI message stream.
  * The API origin stays private and CORS never enters the picture.
  */
 
@@ -91,24 +97,32 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const upstreamBody = upstream.body;
-  const stream = createUIMessageStream({
+  const stream = createUIMessageStream<CitebearUIMessage>({
     execute: async ({ writer }) => {
       const textId = "answer";
       let textStarted = false;
       let terminated = false; // saw the protocol's done or error event
       writer.write({ type: "start" });
       for await (const { event, data } of parseSse(upstreamBody)) {
-        if (event === "token") {
+        if (event === SSE_EVENT.sources) {
+          // fired before tokens: surfaced as a data part so the message carries
+          // its own citations. A fixed id keeps it reconciled to one part.
+          writer.write({
+            type: `data-${SOURCES_PART}`,
+            id: SOURCES_PART,
+            data: JSON.parse(data) as SourcesData,
+          });
+        } else if (event === SSE_EVENT.token) {
           const { delta } = JSON.parse(data) as { delta: string };
           if (!textStarted) {
             writer.write({ type: "text-start", id: textId });
             textStarted = true;
           }
           writer.write({ type: "text-delta", id: textId, delta });
-        } else if (event === "done") {
+        } else if (event === SSE_EVENT.done) {
           // carries messageId/grounded; the feedback UI consumes it in Milestone 5
           terminated = true;
-        } else if (event === "error") {
+        } else if (event === SSE_EVENT.error) {
           const problem = JSON.parse(data) as { title?: string; detail?: string };
           writer.write({
             type: "error",
