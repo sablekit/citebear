@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 
 from citebear_api import rerank
-from citebear_api.rerank import LLMReranker, parse_scores
+from citebear_api.rerank import LLMReranker, RerankUnavailable, parse_scores
 from citebear_api.retrieval import RetrievedChunk
 
 
@@ -59,6 +59,12 @@ def test_parse_scores_malformed_returns_empty() -> None:
     assert parse_scores("", 3) == {}
 
 
+def test_parse_scores_drops_non_finite() -> None:
+    # json.loads accepts bare NaN/Infinity; min(10, nan) would return 10, so a
+    # non-finite score must be dropped, not clamped to a perfect match
+    assert parse_scores('[{"id": 1, "score": NaN}, {"id": 2, "score": Infinity}]', 2) == {}
+
+
 def test_rerank_reorders_by_score_and_defaults_missing_to_zero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -78,3 +84,11 @@ def test_rerank_reorders_by_score_and_defaults_missing_to_zero(
 
 def test_rerank_empty_returns_empty() -> None:
     assert asyncio.run(LLMReranker().rerank("q", [])) == []
+
+
+def test_rerank_raises_when_reply_unparseable(monkeypatch: pytest.MonkeyPatch) -> None:
+    # a garbled reply must not zero every candidate (which would trip the refusal
+    # threshold); it signals the caller to degrade to the fusion order
+    monkeypatch.setattr(rerank, "get_rerank_model", lambda: _FakeModel("sorry, no scores here"))
+    with pytest.raises(RerankUnavailable):
+        asyncio.run(LLMReranker().rerank("q", [_chunk(1), _chunk(2)]))

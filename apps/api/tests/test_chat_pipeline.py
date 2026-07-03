@@ -168,6 +168,28 @@ def test_condensed_query_feeds_retrieval(monkeypatch: pytest.MonkeyPatch) -> Non
     assert seen["query"] == "standalone question"
 
 
+def test_rerank_unavailable_degrades_to_generation(monkeypatch: pytest.MonkeyPatch) -> None:
+    from citebear_api.rerank import RerankUnavailable
+
+    chunks = [_chunk(1), _chunk(2)]
+    _install_mocks(monkeypatch, chunks, "answer from fusion [1].")
+
+    class _FailingReranker:
+        async def rerank(self, _query: str, _hits: list[RetrievedChunk]) -> list[RetrievedChunk]:
+            raise RerankUnavailable
+
+    monkeypatch.setattr(chat, "get_reranker", lambda: _FailingReranker())
+
+    events = _run(_turn())
+
+    # a scoring glitch answers from the fusion order at low confidence, not refuse
+    assert events[0].event == "sources"
+    assert events[0].data["confidence"] == "low"
+    assert len(events[0].data["citations"]) == 2
+    assert "token" in [e.event for e in events]
+    assert events[-1].data["grounded"] is True
+
+
 def test_low_scores_refuse_without_calling_generator(monkeypatch: pytest.MonkeyPatch) -> None:
     chunks = [_chunk(1, score=2.0), _chunk(2, score=1.0)]
     added = _install_mocks(monkeypatch, chunks, "unused")

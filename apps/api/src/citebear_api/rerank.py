@@ -9,6 +9,7 @@ pipeline (SPEC §5.2 rationale). No separate rerank vendor in v1.
 
 import json
 import logging
+import math
 from dataclasses import replace
 from functools import lru_cache
 from typing import Any, Protocol, cast
@@ -21,6 +22,16 @@ from citebear_api.retrieval import RetrievedChunk
 logger = logging.getLogger(__name__)
 
 MAX_SCORE = 10.0
+
+
+class RerankUnavailable(Exception):
+    """The reranker produced no usable scores (unparseable/garbled reply).
+
+    Raised instead of returning all-zero scores, which would trip the refusal
+    threshold and turn good retrieval into an "I don't know". The caller should
+    degrade to the fusion order at low confidence.
+    """
+
 
 SYSTEM_PROMPT = """You rate how well each source excerpt answers a user's question.
 
@@ -69,7 +80,9 @@ def parse_scores(raw: str, count: int) -> dict[int, float]:
             score = float(item["score"])
         except (KeyError, TypeError, ValueError):
             continue
-        if 1 <= idx <= count:
+        # drop NaN/inf: json.loads accepts a bare NaN literal, and min(10, nan)
+        # returns 10 — an unscored chunk would masquerade as a perfect match
+        if 1 <= idx <= count and math.isfinite(score):
             scores[idx] = max(0.0, min(MAX_SCORE, score))
     return scores
 
@@ -81,6 +94,11 @@ class LLMReranker:
         messages = [SystemMessage(SYSTEM_PROMPT), HumanMessage(build_prompt(query, chunks))]
         response = await get_rerank_model().ainvoke(messages)
         scores = parse_scores(response.text, len(chunks))
+        if not scores:
+            # a garbled reply must not zero every candidate (which reads as
+            # "all irrelevant" -> refuse); let the caller keep the fusion order
+            logger.warning("reranker returned no parseable scores; degrading to fusion order")
+            raise RerankUnavailable
         # unscored candidates fall to 0; a stable sort keeps RRF order among ties
         scored = [replace(chunk, score=scores.get(i + 1, 0.0)) for i, chunk in enumerate(chunks)]
         scored.sort(key=lambda chunk: chunk.score, reverse=True)

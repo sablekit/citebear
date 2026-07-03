@@ -22,7 +22,7 @@ from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from citebear_api.citations import build_citations, cited_markers
 from citebear_api.condense import condense_question
-from citebear_api.confidence import assess
+from citebear_api.confidence import LOW, assess
 from citebear_api.config import get_settings
 from citebear_api.db import get_session_factory
 from citebear_api.events import (
@@ -35,7 +35,7 @@ from citebear_api.events import (
 from citebear_api.generation import REFUSAL_TEXT, is_refusal, stream_answer
 from citebear_api.models import Message, MessageCitation
 from citebear_api.problems import problem
-from citebear_api.rerank import get_reranker
+from citebear_api.rerank import RerankUnavailable, get_reranker
 from citebear_api.retrieval import FINAL_TOP_K, embed_query, hybrid_retrieve
 
 logger = logging.getLogger(__name__)
@@ -114,9 +114,15 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
         # hybrid retrieval runs on its own sessions (vector ∥ keyword); the
         # reranker then reorders the candidates by relevance and we keep the top-5
         candidates = await hybrid_retrieve(session_factory, query, query_vector)
-        reranked = await get_reranker().rerank(query, candidates)
-        chunks = reranked[:FINAL_TOP_K]
-        confidence, should_generate = assess(chunks)
+        try:
+            reranked = await get_reranker().rerank(query, candidates)
+            chunks = reranked[:FINAL_TOP_K]
+            confidence, should_generate = assess(chunks)
+        except RerankUnavailable:
+            # scoring glitch, not a retrieval miss: answer from the fusion order
+            # at low confidence rather than refusing good candidates
+            chunks = candidates[:FINAL_TOP_K]
+            confidence, should_generate = LOW, bool(chunks)
 
         parts: list[str] = []
         if should_generate:
