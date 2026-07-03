@@ -25,9 +25,12 @@ export function SourcePanel({
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  // the chip that opened the panel, so keyboard focus returns there on close
+  const triggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!citation) return;
+    triggerRef.current = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -35,6 +38,12 @@ export function SourcePanel({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [citation, onClose]);
+
+  useEffect(() => {
+    if (citation) return;
+    triggerRef.current?.focus?.();
+    triggerRef.current = null;
+  }, [citation]);
 
   if (!citation) return null;
 
