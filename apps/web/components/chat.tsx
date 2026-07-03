@@ -10,18 +10,15 @@ const SUGGESTIONS = [
   "How are documents chunked?",
 ];
 
-function lastUserText(messages: UIMessage[]): string {
-  const last = messages.at(-1);
-  if (!last || last.role !== "user") return "";
-  return last.parts
-    .map((part) => (part.type === "text" ? part.text : ""))
-    .join("");
-}
-
 function messageText(message: UIMessage): string {
   return message.parts
     .map((part) => (part.type === "text" ? part.text : ""))
     .join("");
+}
+
+function lastUserText(messages: UIMessage[]): string {
+  const last = messages.at(-1);
+  return last?.role === "user" ? messageText(last) : "";
 }
 
 export function Chat() {
@@ -126,6 +123,7 @@ export function Chat() {
             onChange={(event) => setInput(event.target.value)}
             placeholder="Ask a question about the documents…"
             aria-label="Your question"
+            maxLength={4000}
             className="flex-1 rounded-xl border border-zinc-300 bg-transparent px-4 py-2.5 outline-none transition-colors focus:border-zinc-500 dark:border-zinc-700 dark:focus:border-zinc-400"
           />
           <button
