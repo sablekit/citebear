@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from citebear_api.fusion import reciprocal_rank_fusion
@@ -23,6 +23,12 @@ VECTOR_TOP_K = 20
 KEYWORD_TOP_K = 20
 FUSION_TOP_K = 12
 FINAL_TOP_K = 5  # chunks shown to the generator (SPEC §5.2 step 4); rerank trims to this
+# HNSW candidate-list size, applied per query with SET LOCAL (never a
+# server-wide GUC), must be >= the vector limit. Swept against the golden set
+# (#8): at M3's small corpus recall@20 is saturated (15/15) and latency flat
+# (~12-18 ms) across ef 20-200, so the value is not yet load-bearing; 100 gives
+# headroom above the 20-candidate fetch for the larger M6 library — re-sweep then.
+HNSW_EF_SEARCH = 100
 
 # columns every search returns; a full Chunk row would drag each result's
 # 1536-dim embedding and tsvector back over the wire unused
@@ -71,8 +77,15 @@ def _to_chunk(row: Any, score: float) -> RetrievedChunk:
 
 
 async def vector_search(
-    session: AsyncSession, query_vector: list[float], limit: int = VECTOR_TOP_K
+    session: AsyncSession,
+    query_vector: list[float],
+    limit: int = VECTOR_TOP_K,
+    ef_search: int = HNSW_EF_SEARCH,
 ) -> list[RetrievedChunk]:
+    # ef_search must be set in the same transaction as the query (pgvector);
+    # SET LOCAL scopes it there. int() guards the interpolation — SET takes no
+    # bind parameters.
+    await session.execute(text(f"SET LOCAL hnsw.ef_search = {int(ef_search)}"))
     distance = Chunk.embedding.cosine_distance(query_vector)  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
     statement = (
         select(*_COLUMNS, distance.label("distance"))
@@ -105,17 +118,18 @@ async def hybrid_retrieve(
     session_factory: async_sessionmaker[AsyncSession],
     query_text: str,
     query_vector: list[float],
+    ef_search: int = HNSW_EF_SEARCH,
 ) -> list[RetrievedChunk]:
     """Vector and keyword searches in parallel, fused by RRF -> top-12.
 
     Each search opens its own session so the two run concurrently; the caller
     has already done the embedding round trip, so no connection is held across
-    a gateway call.
+    a gateway call. ``ef_search`` is exposed for the tuning sweep (#8).
     """
 
     async def _vector() -> list[RetrievedChunk]:
         async with session_factory() as db:
-            return await vector_search(db, query_vector)
+            return await vector_search(db, query_vector, ef_search=ef_search)
 
     async def _keyword() -> list[RetrievedChunk]:
         async with session_factory() as db:
