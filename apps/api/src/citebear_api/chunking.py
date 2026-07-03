@@ -54,6 +54,11 @@ def _split_section(heading_line: str, body: str) -> list[str]:
     """
     prefix = f"{heading_line}\n\n" if heading_line else ""
     budget = TARGET_TOKENS - count_tokens(prefix)
+    if budget <= OVERLAP_TOKENS:
+        # pathological (sentence-length) heading: reattaching it would
+        # shrink the budget below the overlap and crash the splitter
+        prefix = ""
+        budget = TARGET_TOKENS
 
     if count_tokens(body) <= budget:
         return [prefix + body]

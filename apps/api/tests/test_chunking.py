@@ -8,6 +8,11 @@ from citebear_api.chunking import (
     chunk_markdown,
 )
 
+# the splitter sizes pieces by summing per-split token counts; re-encoding
+# the joined text can differ by a token or two at BPE boundaries, so the
+# ~400 target (SPEC §5.1) carries a small tolerance
+MAX_TOKENS = int(TARGET_TOKENS * 1.05)
+
 
 def _long_paragraphs(sentences: int) -> str:
     return " ".join(
@@ -52,7 +57,7 @@ def test_oversized_section_splits_under_target() -> None:
     text = f"# Big\n\n{_long_paragraphs(120)}"
     chunks = chunk_markdown(text)
     assert len(chunks) > 1
-    assert all(c.token_count <= TARGET_TOKENS for c in chunks)
+    assert all(c.token_count <= MAX_TOKENS for c in chunks)
     # all pieces of the split section keep the section's heading trail
     assert all(c.section_path == ["Big"] for c in chunks)
 
@@ -73,6 +78,14 @@ def test_chunks_never_cross_heading_boundary() -> None:
     for chunk in chunks:
         crosses = "Sentence number" in chunk.content and "omega marker" in chunk.content
         assert not crosses
+
+
+def test_oversized_heading_does_not_crash_the_splitter() -> None:
+    monster_heading = "# " + " ".join(f"word{i}" for i in range(500))
+    text = f"{monster_heading}\n\n{_long_paragraphs(120)}"
+    chunks = chunk_markdown(text)
+    assert len(chunks) > 1
+    assert all(c.token_count <= MAX_TOKENS for c in chunks)
 
 
 def test_ordinals_are_sequential_from_zero() -> None:
