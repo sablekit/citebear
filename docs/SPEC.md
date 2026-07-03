@@ -97,7 +97,7 @@ documents (
   title         text NOT NULL,
   filename      text NOT NULL,
   mime_type     text NOT NULL,            -- application/pdf, docx, text/markdown
-  blob_url      text NOT NULL,            -- Vercel Blob URL of the original
+  source_url    text NOT NULL,            -- URL of the original: Vercel Blob for uploads, canonical source link for the preloaded library
   status        text NOT NULL,            -- processing | ready | failed
   error         text,                     -- failure reason when status=failed
   page_count    int,
@@ -325,7 +325,7 @@ in v1; hand-rolled UI keeps the design-quality signal high.
 | `GATEWAY_BASE_URL` | api | OpenAI-compatible gateway endpoint (default: Vercel AI Gateway) |
 | `GATEWAY_API_KEY` | api | gateway key |
 | `INTERNAL_API_KEY` | api + web | shared secret for the web → api hop |
-| `CHAT_MODEL` | api | `anthropic/claude-sonnet-5` |
+| `CHAT_MODEL` | api | `anthropic/claude-haiku-4-5` (current default) |
 | `RERANK_MODEL` | api | `anthropic/claude-haiku-4-5` |
 | `EMBEDDING_MODEL` | api | `openai/text-embedding-3-small` |
 | `ADMIN_PASSWORD` | api + web | shared secret |
@@ -390,4 +390,6 @@ Markdown sample content (self-owned, MIT).
    AI Gateway and OpenRouter expose an embeddings API); the remaining question
    is only whether another model wins on the golden retrieval set.
 2. **Chat model default for the public instance** — quality vs. token cost on a
-   public, rate-limited endpoint.
+   public, rate-limited endpoint. Interim default: `anthropic/claude-haiku-4-5`
+   (cheap, fast); the final choice waits for the golden retrieval set
+   (Milestone 3) to compare candidates on real questions.

@@ -26,6 +26,11 @@ jobs:
       - run: pnpm lint:web
       - run: pnpm typecheck:web
       - run: pnpm build:web
+        env:
+          # placeholder values so the env validation (which is the point)
+          # can pass in a build that never serves traffic
+          API_URL: http://localhost:8000
+          INTERNAL_API_KEY: ci-build-placeholder
 
   api:
     runs-on: ubuntu-latest

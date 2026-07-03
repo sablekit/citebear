@@ -1,9 +1,30 @@
-from fastapi import FastAPI
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from typing import Annotated
 
-app = FastAPI(title="CiteBear API", version="0.1.0")
+from fastapi import Depends, FastAPI
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from citebear_api.chat import router as chat_router
+from citebear_api.config import get_settings
+from citebear_api.db import get_session
+from citebear_api.problems import install_problem_handlers
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
+    get_settings()  # missing config fails the boot, not the request
+    yield
+
+
+app = FastAPI(title="CiteBear API", version="0.1.0", lifespan=lifespan)
+install_problem_handlers(app)
+app.include_router(chat_router)
 
 
 @app.get("/healthz")
-def healthz() -> dict[str, str]:
-    """Liveness probe. DB connectivity check lands with the schema in Milestone 1."""
+async def healthz(session: Annotated[AsyncSession, Depends(get_session)]) -> dict[str, str]:
+    """Liveness probe with database connectivity check."""
+    await session.execute(text("SELECT 1"))
     return {"status": "ok"}

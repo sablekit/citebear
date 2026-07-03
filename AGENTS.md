@@ -32,6 +32,10 @@ uv run pyright
 uv run uvicorn citebear_api.app:app --reload
 ```
 
+Keep `--reload` on Windows dev machines: uvicorn's reload mode selects the
+selector event loop that async psycopg requires (the default proactor loop
+fails on any DB call).
+
 ## Conventions
 
 - **Git:** Conventional Commits (`feat:`/`fix:`/`docs:`/`chore:`); branches
