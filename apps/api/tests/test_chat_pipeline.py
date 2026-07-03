@@ -72,7 +72,7 @@ def _install_mocks(
     async def fake_embed(_question: str) -> list[float]:
         return [0.0]
 
-    async def fake_retrieve(_session: object, _vector: object) -> list[RetrievedChunk]:
+    async def fake_retrieve(*_: object, **__: object) -> list[RetrievedChunk]:
         return chunks
 
     async def fake_stream(*_: object, **__: object) -> AsyncIterator[str]:
@@ -80,7 +80,7 @@ def _install_mocks(
             yield token + " "
 
     monkeypatch.setattr(chat, "embed_query", fake_embed)
-    monkeypatch.setattr(chat, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat, "hybrid_retrieve", fake_retrieve)
     monkeypatch.setattr(chat, "stream_answer", fake_stream)
     monkeypatch.setattr(chat, "get_session_factory", lambda: lambda: _FakeSession(added))
     return added

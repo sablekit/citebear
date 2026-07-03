@@ -33,7 +33,7 @@ from citebear_api.events import (
 from citebear_api.generation import is_refusal, stream_answer
 from citebear_api.models import Message, MessageCitation
 from citebear_api.problems import problem
-from citebear_api.retrieval import embed_query, retrieve
+from citebear_api.retrieval import FINAL_TOP_K, embed_query, hybrid_retrieve
 
 logger = logging.getLogger(__name__)
 
@@ -101,8 +101,12 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
                     ip_hash=turn.ip_hash,
                 )
             )
-            chunks = await retrieve(db, query_vector)
             await db.commit()
+
+        # hybrid retrieval runs on its own sessions (vector ∥ keyword), so it is
+        # kept out of the write transaction above
+        candidates = await hybrid_retrieve(session_factory, turn.message, query_vector)
+        chunks = candidates[:FINAL_TOP_K]
 
         # sources before tokens: the UI renders citation chips while the answer
         # is still being written (SPEC §5.4)

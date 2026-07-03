@@ -50,7 +50,11 @@ class Chunk(Base):
     ordinal: Mapped[int] = mapped_column(Integer)
     content: Mapped[str] = mapped_column(Text)
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM))
-    fts = mapped_column(TSVECTOR, Computed("to_tsvector('english', content)", persisted=True))
+    # generated tsvector for keyword search; never read into Python (excluded
+    # from selects), the Mapped[str] annotation just makes it queryable + typed
+    fts: Mapped[str] = mapped_column(
+        TSVECTOR, Computed("to_tsvector('english', content)", persisted=True)
+    )
     page_start: Mapped[int | None] = mapped_column(Integer)
     page_end: Mapped[int | None] = mapped_column(Integer)
     section_path: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
