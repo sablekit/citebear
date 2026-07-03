@@ -6,8 +6,10 @@ from fastapi import Depends, FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from citebear_api.chat import router as chat_router
 from citebear_api.config import get_settings
 from citebear_api.db import get_session
+from citebear_api.problems import install_problem_handlers
 
 
 @asynccontextmanager
@@ -17,6 +19,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
 
 app = FastAPI(title="CiteBear API", version="0.1.0", lifespan=lifespan)
+install_problem_handlers(app)
+app.include_router(chat_router)
 
 
 @app.get("/healthz")
