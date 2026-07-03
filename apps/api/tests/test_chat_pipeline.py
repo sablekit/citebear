@@ -17,7 +17,9 @@ from citebear_api.models import Message, MessageCitation
 from citebear_api.retrieval import RetrievedChunk
 
 
-def _chunk(n: int) -> RetrievedChunk:
+def _chunk(n: int, score: float = 8.0) -> RetrievedChunk:
+    # default score clears the confidence threshold so the pipeline generates;
+    # refusal tests pass a low score explicitly
     return RetrievedChunk(
         chunk_id=uuid4(),
         document_title=f"Doc {n}",
@@ -26,7 +28,7 @@ def _chunk(n: int) -> RetrievedChunk:
         section_path=[str(n)],
         page_start=n,
         page_end=n,
-        score=0.5,
+        score=score,
     )
 
 
@@ -115,6 +117,7 @@ def test_sources_event_precedes_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
     assert names.index("sources") < names.index("token")
     # the sources event carries every retrieved chunk as a candidate citation
     assert len(events[0].data["citations"]) == 3
+    assert events[0].data["confidence"] == "high"  # default chunk score 8.0
 
 
 def test_post_check_persists_only_used_valid_citations(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -140,3 +143,33 @@ def test_refusal_persists_no_citations(monkeypatch: pytest.MonkeyPatch) -> None:
     assert not [row for row in added if isinstance(row, MessageCitation)]
     assert events[-1].event == "done"
     assert events[-1].data["grounded"] is False
+
+
+def test_low_scores_refuse_without_calling_generator(monkeypatch: pytest.MonkeyPatch) -> None:
+    chunks = [_chunk(1, score=2.0), _chunk(2, score=1.0)]
+    added = _install_mocks(monkeypatch, chunks, "unused")
+
+    called = {"stream": False}
+
+    async def spy_stream(*_: object, **__: object) -> AsyncIterator[str]:
+        called["stream"] = True
+        yield "should not run"
+
+    monkeypatch.setattr(chat, "stream_answer", spy_stream)
+
+    events = _run(_turn())
+
+    # the generator is never called when nothing clears the threshold
+    assert called["stream"] is False
+    # sources still lead, but with no citable chunks and low confidence
+    assert events[0].event == "sources"
+    assert events[0].data["citations"] == []
+    assert events[0].data["confidence"] == "low"
+    # the refusal text is streamed as a token so the UI renders it normally
+    refusal = "".join(e.data["delta"] for e in events if e.event == "token")
+    assert refusal.startswith("I don't know")
+    assert events[-1].event == "done"
+    assert events[-1].data["grounded"] is False
+    assert not [row for row in added if isinstance(row, MessageCitation)]
+    assistant = next(row for row in added if isinstance(row, Message) and row.role == "assistant")
+    assert assistant.confidence == "low"

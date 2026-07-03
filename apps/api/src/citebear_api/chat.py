@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from citebear_api.citations import build_citations, cited_markers
+from citebear_api.confidence import assess
 from citebear_api.config import get_settings
 from citebear_api.db import get_session_factory
 from citebear_api.events import (
@@ -30,7 +31,7 @@ from citebear_api.events import (
     sources_event,
     token_event,
 )
-from citebear_api.generation import is_refusal, stream_answer
+from citebear_api.generation import REFUSAL_TEXT, is_refusal, stream_answer
 from citebear_api.models import Message, MessageCitation
 from citebear_api.problems import problem
 from citebear_api.rerank import get_reranker
@@ -110,18 +111,25 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
         candidates = await hybrid_retrieve(session_factory, turn.message, query_vector)
         reranked = await get_reranker().rerank(turn.message, candidates)
         chunks = reranked[:FINAL_TOP_K]
-
-        # sources before tokens: the UI renders citation chips while the answer
-        # is still being written (SPEC §5.4)
-        citations = build_citations(chunks)
-        yield sources_event(citations)
+        confidence, should_generate = assess(chunks)
 
         parts: list[str] = []
-        async for delta in stream_answer(turn.message, chunks, history):
-            parts.append(delta)
-            yield token_event(delta)
-        answer = "".join(parts)
-        grounded = not is_refusal(answer)
+        if should_generate:
+            # sources before tokens: the UI renders citation chips while the
+            # answer is still being written (SPEC §5.4)
+            yield sources_event(build_citations(chunks), confidence)
+            async for delta in stream_answer(turn.message, chunks, history):
+                parts.append(delta)
+                yield token_event(delta)
+            answer = "".join(parts)
+            grounded = not is_refusal(answer)
+        else:
+            # nothing cleared the threshold: refuse without calling the generator
+            # (SPEC §5.3). No chunk is trustworthy enough to cite.
+            yield sources_event([], confidence)
+            answer = REFUSAL_TEXT
+            yield token_event(answer)
+            grounded = False
 
         async with session_factory() as db:
             assistant_message = Message(
@@ -129,6 +137,7 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
                 role="assistant",
                 content=answer,
                 grounded=grounded,
+                confidence=confidence,
                 model=settings.chat_model,
                 latency_ms=int((time.monotonic() - started) * 1000),
             )

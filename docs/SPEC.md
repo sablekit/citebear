@@ -238,8 +238,9 @@ event: error     data: {"type":"…","title":"…","status":500,"detail":"…"}
 Each citation carries what the source panel renders: `marker` (the `[n]` shown
 in the answer), `chunkId`, `docTitle`, `page`, `sectionPath` (heading trail),
 `sourceUrl` (the original file — `#page=` appended for PDFs), and `snippet` (the
-cited passage). `confidence` is a constant `"high"` in v1 until the rerank-score
-threshold lands (5.3, Milestone 3); the UI ignores it until then.
+cited passage). `confidence` is `"high"` or `"low"`, derived from the rerank
+scores (§5.3); on a below-threshold refusal the `sources` event carries no
+citations.
 
 `sources` is sent **before** tokens so the UI can render citation chips
 immediately. The web app proxies this stream through a Next.js route handler
