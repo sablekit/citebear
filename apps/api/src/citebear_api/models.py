@@ -9,7 +9,7 @@ from datetime import datetime
 
 from pgvector.sqlalchemy import Vector  # pyright: ignore[reportMissingTypeStubs]
 from sqlalchemy import Computed, ForeignKey, Index, text
-from sqlalchemy.dialects.postgresql import ARRAY, TIMESTAMP, TSVECTOR, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, REAL, TIMESTAMP, TSVECTOR, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import Boolean, Integer, Text
 
@@ -89,3 +89,17 @@ class Message(Base):
         Index("idx_messages_session_id_created_at", "session_id", "created_at"),
         Index("idx_messages_ip_hash_created_at", "ip_hash", "created_at"),
     )
+
+
+class MessageCitation(Base):
+    __tablename__ = "message_citations"
+
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True
+    )
+    marker: Mapped[int] = mapped_column(Integer, primary_key=True)  # [1], [2], ... in the answer
+    chunk_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("chunks.id", ondelete="CASCADE")
+    )
+    # rerank score in Milestone 3; vector similarity (1 - cosine_distance) until then
+    score: Mapped[float] = mapped_column(REAL)
