@@ -10,7 +10,7 @@ from datetime import datetime
 from sqlalchemy import Computed, ForeignKey, Index, text
 from sqlalchemy.dialects.postgresql import ARRAY, REAL, TIMESTAMP, TSVECTOR, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy.types import Boolean, Integer, Text
+from sqlalchemy.types import Boolean, Integer, SmallInteger, Text
 
 from citebear_api.vector import Vector
 
@@ -108,3 +108,17 @@ class MessageCitation(Base):
     )
     # rerank score in Milestone 3; vector similarity (1 - cosine_distance) until then
     score: Mapped[float] = mapped_column(REAL)
+
+
+class Feedback(Base):
+    __tablename__ = "feedback"
+
+    # one row per assistant message: the PK makes re-rating an idempotent
+    # overwrite rather than a new vote (SPEC §4)
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True
+    )
+    rating: Mapped[int] = mapped_column(SmallInteger)  # +1 | -1
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=text("now()")
+    )

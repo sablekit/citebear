@@ -10,6 +10,7 @@ from citebear_api.chat import router as chat_router
 from citebear_api.config import get_settings
 from citebear_api.db import get_session
 from citebear_api.documents import router as documents_router
+from citebear_api.feedback import router as feedback_router
 from citebear_api.problems import install_problem_handlers
 
 
@@ -23,6 +24,7 @@ app = FastAPI(title="CiteBear API", version="0.1.0", lifespan=lifespan)
 install_problem_handlers(app)
 app.include_router(chat_router)
 app.include_router(documents_router)
+app.include_router(feedback_router)
 
 
 @app.get("/healthz")
