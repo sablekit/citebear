@@ -23,21 +23,20 @@ def _user(session_id: uuid.UUID, content: str, minutes_ago: int) -> UserMessage:
 def test_question_for_picks_latest_user_before_the_answer() -> None:
     sid = uuid.uuid4()
     answer_at = datetime.now(UTC)
-    users = [
+    session_users = [
         _user(sid, "first question", minutes_ago=20),
         _user(sid, "second question", minutes_ago=5),  # the most recent before the answer
     ]
-    assert question_for(sid, answer_at, users) == "second question"
+    assert question_for(answer_at, session_users) == "second question"
 
 
-def test_question_for_ignores_other_sessions_and_later_users() -> None:
-    sid, other = uuid.uuid4(), uuid.uuid4()
+def test_question_for_ignores_users_after_the_answer() -> None:
+    sid = uuid.uuid4()
     answer_at = datetime.now(UTC) - timedelta(minutes=10)
-    users = [
-        _user(other, "wrong session", minutes_ago=15),
-        _user(sid, "after the answer", minutes_ago=1),  # created_at > answer: not the prompt
-    ]
-    assert question_for(sid, answer_at, users) == ""
+    # the caller groups by session, so question_for only sees this session's
+    # users; a user message created after the answer is not its prompt
+    session_users = [_user(sid, "after the answer", minutes_ago=1)]
+    assert question_for(answer_at, session_users) == ""
 
 
 def test_entry_serializes_camelcase() -> None:

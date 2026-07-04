@@ -8,6 +8,7 @@ latest user message in the same session before the answer — paired in Python
 """
 
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -54,15 +55,11 @@ class UserMessage:
     created_at: datetime
 
 
-def question_for(session_id: uuid.UUID, before: datetime, users: list[UserMessage]) -> str:
-    """The latest user message in this session asked before the answer."""
+def question_for(before: datetime, session_users: list[UserMessage]) -> str:
+    """The latest of this session's user messages asked before the answer."""
     best: UserMessage | None = None
-    for user in users:
-        if (
-            user.session_id == session_id
-            and user.created_at < before
-            and (best is None or user.created_at > best.created_at)
-        ):
+    for user in session_users:
+        if user.created_at < before and (best is None or user.created_at > best.created_at):
             best = user
     return best.content if best is not None else ""
 
@@ -94,7 +91,10 @@ async def list_questions(
         ).all()
 
         session_ids = {answer.session_id for answer, _ in answers}
-        users: list[UserMessage] = []
+        # group the page's user messages by session, so pairing each answer is a
+        # lookup into its own session's (small) list rather than a scan of every
+        # user row across every session on the page
+        users_by_session: dict[uuid.UUID, list[UserMessage]] = defaultdict(list)
         if session_ids:
             user_rows = (
                 await session.execute(
@@ -103,12 +103,13 @@ async def list_questions(
                     )
                 )
             ).all()
-            users = [UserMessage(sid, content, created) for sid, content, created in user_rows]
+            for sid, content, created in user_rows:
+                users_by_session[sid].append(UserMessage(sid, content, created))
 
     entries = [
         QuestionLogEntry(
             message_id=answer.id,
-            question=question_for(answer.session_id, answer.created_at, users),
+            question=question_for(answer.created_at, users_by_session[answer.session_id]),
             answer=answer.content,
             grounded=answer.grounded,
             confidence=answer.confidence,
