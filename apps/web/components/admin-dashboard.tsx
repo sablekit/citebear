@@ -5,10 +5,11 @@ import { useState } from "react";
 
 import { AdminDocuments } from "./admin-documents";
 import { AdminQuestions } from "./admin-questions";
+import { AdminStats } from "./admin-stats";
 
 /** Authenticated admin shell (SPEC §7): Documents, Questions, and Stats tabs. */
 
-const TABS = ["Documents", "Questions"] as const;
+const TABS = ["Documents", "Questions", "Stats"] as const;
 type Tab = (typeof TABS)[number];
 
 export function AdminDashboard() {
@@ -58,6 +59,7 @@ export function AdminDashboard() {
       <main className="flex flex-1 flex-col py-6">
         {tab === "Documents" && <AdminDocuments />}
         {tab === "Questions" && <AdminQuestions />}
+        {tab === "Stats" && <AdminStats />}
       </main>
     </div>
   );
