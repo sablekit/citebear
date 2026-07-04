@@ -14,6 +14,7 @@ from citebear_api.documents import router as documents_router
 from citebear_api.feedback import router as feedback_router
 from citebear_api.problems import install_problem_handlers
 from citebear_api.questions import router as questions_router
+from citebear_api.stats import router as stats_router
 
 
 @asynccontextmanager
@@ -29,6 +30,7 @@ app.include_router(documents_router)
 app.include_router(feedback_router)
 app.include_router(admin_login_router)
 app.include_router(questions_router)
+app.include_router(stats_router)
 
 
 @app.get("/healthz")
