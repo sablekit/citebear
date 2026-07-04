@@ -16,7 +16,7 @@ from typing import Any, Protocol, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from citebear_api.gateway import get_rerank_model
+from citebear_api.gateway import get_rerank_model, with_retry
 from citebear_api.retrieval import RetrievedChunk
 
 logger = logging.getLogger(__name__)
@@ -92,7 +92,7 @@ class LLMReranker:
         if not chunks:
             return []
         messages = [SystemMessage(SYSTEM_PROMPT), HumanMessage(build_prompt(query, chunks))]
-        response = await get_rerank_model().ainvoke(messages)
+        response = await with_retry(lambda: get_rerank_model().ainvoke(messages))
         scores = parse_scores(response.text, len(chunks))
         if not scores:
             # a garbled reply must not zero every candidate (which reads as

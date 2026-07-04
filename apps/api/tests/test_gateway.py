@@ -35,3 +35,31 @@ def test_embed_texts_preserves_order_across_batches(monkeypatch: pytest.MonkeyPa
 
 def test_embed_texts_empty_returns_empty() -> None:
     assert asyncio.run(gateway.embed_texts([])) == []
+
+
+def test_with_retry_recovers_from_transient_faults() -> None:
+    calls = 0
+
+    async def flaky() -> str:
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise RuntimeError("gateway said 429 rate limit")  # transient by message
+        return "ok"
+
+    result = asyncio.run(gateway.with_retry(flaky, base_delay=0.0))
+    assert result == "ok"
+    assert calls == 3
+
+
+def test_with_retry_does_not_retry_non_transient_errors() -> None:
+    calls = 0
+
+    async def boom() -> str:
+        nonlocal calls
+        calls += 1
+        raise ValueError("bad request")  # not transient -> propagate immediately
+
+    with pytest.raises(ValueError, match="bad request"):
+        asyncio.run(gateway.with_retry(boom, base_delay=0.0))
+    assert calls == 1

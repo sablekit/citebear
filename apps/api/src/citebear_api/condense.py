@@ -14,7 +14,7 @@ import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from citebear_api.gateway import get_chat_model
+from citebear_api.gateway import get_chat_model, with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +42,8 @@ async def condense_question(message: str, history: list[tuple[str, str]]) -> str
         f"Latest message: {message}\n\nStandalone question:"
     )
     try:
-        response = await get_chat_model().ainvoke(
-            [SystemMessage(SYSTEM_PROMPT), HumanMessage(prompt)]
+        response = await with_retry(
+            lambda: get_chat_model().ainvoke([SystemMessage(SYSTEM_PROMPT), HumanMessage(prompt)])
         )
     except Exception:
         # a condense-call blip must not sink the whole turn: retrieval can still
