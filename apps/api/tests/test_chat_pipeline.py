@@ -224,6 +224,41 @@ def test_refusal_persists_no_citations(monkeypatch: pytest.MonkeyPatch) -> None:
     assert events[-1].data["grounded"] is False
 
 
+def test_cited_answer_is_grounded_despite_refusal_wording(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # the #59 derail shape: opens with the refusal template but ends with a real
+    # citation. The old is_refusal prefix check flagged it grounded=false; the
+    # structural rule keeps it grounded because it cites a source.
+    chunks = [_chunk(1)]
+    added = _install_mocks(
+        monkeypatch,
+        chunks,
+        "I don't know. Actually, the answer is 512 documents [1].",
+    )
+
+    events = _run(_turn())
+
+    assert events[-1].data["grounded"] is True
+    assert [(c.marker, c.chunk_id) for c in added if isinstance(c, MessageCitation)] == [
+        (1, chunks[0].chunk_id)
+    ]
+
+
+def test_paraphrased_refusal_without_citation_is_not_grounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # a refusal the model paraphrased away from the exact template, citing
+    # nothing: is_refusal's prefix check would miss it and store grounded=true;
+    # the structural rule marks it ungrounded because it cites no source (#33).
+    chunks = [_chunk(1)]
+    _install_mocks(monkeypatch, chunks, "The provided documents do not cover that topic.")
+
+    events = _run(_turn())
+
+    assert events[-1].data["grounded"] is False
+
+
 def test_condensed_query_feeds_retrieval(monkeypatch: pytest.MonkeyPatch) -> None:
     chunks = [_chunk(1)]
     _install_mocks(monkeypatch, chunks, "answer [1].")

@@ -35,7 +35,7 @@ from citebear_api.events import (
     sources_event,
     token_event,
 )
-from citebear_api.generation import REFUSAL_TEXT, is_refusal, stream_answer
+from citebear_api.generation import REFUSAL_TEXT, stream_answer
 from citebear_api.models import Message, MessageCitation
 from citebear_api.problems import problem
 from citebear_api.rerank import RerankUnavailable, get_reranker
@@ -170,7 +170,13 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
                 parts.append(delta)
                 yield token_event(delta)
             answer = "".join(parts)
-            grounded = not is_refusal(answer)
+            # grounded = the answer actually cites a retrieved source. The
+            # citation is structural proof it drew on the documents: a refusal —
+            # the exact template or any paraphrase — cites nothing (#33), and a
+            # cited answer that happens to open with the refusal wording is still
+            # grounded (#59). This replaces the is_refusal string-prefix
+            # heuristic, which mislabeled both cases.
+            grounded = bool(cited_markers(answer, len(chunks)))
         else:
             # nothing cleared the threshold: refuse without calling the generator
             # (SPEC §5.3). No chunk is trustworthy enough to cite.
