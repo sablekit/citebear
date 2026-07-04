@@ -16,6 +16,7 @@ import logging
 import uuid
 from pathlib import Path
 
+import httpx
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -158,7 +159,12 @@ async def ingest_from_blob(
     # so it can't be turned into a server-side fetch of an arbitrary address (SSRF)
     if not is_blob_url(blob_url):
         raise IngestionError("blobUrl must be a Vercel Blob URL")
-    data = await fetch_blob(blob_url)
+    try:
+        data = await fetch_blob(blob_url)
+    except httpx.HTTPError as exc:
+        # a fetch fault (timeout, 5xx, a blob deleted by a racing re-ingest) is
+        # retryable input trouble, not a server crash — surface it as such
+        raise IngestionError("The uploaded file could not be fetched; please retry.") from exc
     return await ingest_document(
         data=data, filename=filename, title=title, mime_type=mime_type, source_url=blob_url
     )

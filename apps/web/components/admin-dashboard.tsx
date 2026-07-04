@@ -10,7 +10,11 @@ export function AdminDashboard() {
   const router = useRouter();
 
   async function logout() {
-    await fetch("/api/admin/login", { method: "DELETE" });
+    try {
+      await fetch("/api/admin/login", { method: "DELETE" });
+    } catch {
+      // a rejected fetch shouldn't throw uncaught; refresh re-gates on the cookie
+    }
     router.refresh();
   }
 

@@ -118,8 +118,12 @@ export function AdminDocuments() {
   async function remove(document: AdminDocument) {
     if (!confirm(`Delete "${document.title}"? This removes its chunks and citations.`)) return;
     setError(null);
-    const response = await fetch(`/api/admin/documents/${document.id}`, { method: "DELETE" });
-    if (!response.ok) setError(`Could not delete ${document.title}.`);
+    try {
+      const response = await fetch(`/api/admin/documents/${document.id}`, { method: "DELETE" });
+      if (!response.ok) setError(`Could not delete ${document.title}.`);
+    } catch {
+      setError(`Could not delete ${document.title}.`);
+    }
     await refresh();
   }
 
@@ -134,7 +138,9 @@ export function AdminDocuments() {
         onDrop={(event) => {
           event.preventDefault();
           setDragging(false);
-          void ingest(Array.from(event.dataTransfer.files));
+          // ignore a drop while a batch is already uploading — overlapping
+          // batches clobber each other's error state and can race a re-ingest
+          if (!busy) void ingest(Array.from(event.dataTransfer.files));
         }}
         className={`flex flex-col items-center gap-3 rounded-2xl border border-dashed px-6 py-10 text-center transition-colors ${
           dragging

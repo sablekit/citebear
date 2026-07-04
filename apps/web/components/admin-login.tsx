@@ -15,16 +15,21 @@ export function AdminLogin() {
     event.preventDefault();
     setBusy(true);
     setError(null);
-    const response = await fetch("/api/admin/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    if (response.ok) {
-      router.refresh();
-      return; // stay busy: the authenticated view replaces this form
+    try {
+      const response = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      if (response.ok) {
+        router.refresh();
+        return; // stay busy: the authenticated view replaces this form
+      }
+      setError("Incorrect password.");
+    } catch {
+      // a rejected fetch (network drop) must not wedge the form on "…"
+      setError("Could not reach the server. Please try again.");
     }
-    setError("Incorrect password.");
     setBusy(false);
   }
 

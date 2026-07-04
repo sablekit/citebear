@@ -7,8 +7,10 @@ covered by the golden workflow against a real Postgres.
 
 import asyncio
 
+import httpx
 import pytest
 
+from citebear_api import ingest as ingest_module
 from citebear_api.ingest import (
     MAX_DOCUMENT_BYTES,
     IngestionError,
@@ -60,6 +62,23 @@ def test_ingest_from_blob_rejects_non_blob_urls() -> None:
                 blob_url="http://169.254.169.254/latest/meta-data/",
                 filename="x.md",
                 title="x",
+                mime_type=MARKDOWN_MIME,
+            )
+        )
+
+
+def test_blob_fetch_failure_becomes_a_clean_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    # a fetch fault (timeout, 5xx, deleted blob) must surface as IngestionError, not a 500
+    async def boom(_url: str) -> bytes:
+        raise httpx.ConnectError("unreachable")
+
+    monkeypatch.setattr(ingest_module, "fetch_blob", boom)
+    with pytest.raises(IngestionError, match="could not be fetched"):
+        asyncio.run(
+            ingest_from_blob(
+                blob_url="https://x.public.blob.vercel-storage.com/a.md",
+                filename="a.md",
+                title="a",
                 mime_type=MARKDOWN_MIME,
             )
         )
