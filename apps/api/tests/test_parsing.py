@@ -11,6 +11,7 @@ from docx import Document as DocxDocument
 from fpdf import FPDF
 
 from citebear_api.parsing import (
+    PageLimitError,
     UnsupportedMediaTypeError,
     parse_document,
     parse_docx,
@@ -67,6 +68,28 @@ def test_pdf_body_is_not_all_headings() -> None:
     sections, _ = parse_pdf(_pdf_with_heading_spanning_two_pages())
     section = next(s for s in sections if s.section_path == ["Installation"])
     assert "Body line 0" in section.body
+
+
+def _pdf_with_pages(count: int) -> bytes:
+    pdf = FPDF()
+    for page in range(count):
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=11)
+        pdf.cell(0, 6, f"Page {page} body text.", new_x="LMARGIN", new_y="NEXT")
+    return bytes(pdf.output())
+
+
+def test_pdf_over_the_page_cap_is_rejected_mid_parse() -> None:
+    # the cap must fire the moment the document crosses it, before the rest of
+    # the pages are laid out (the whole point of enforcing it during parsing)
+    with pytest.raises(PageLimitError):
+        parse_pdf(_pdf_with_pages(3), max_pages=2)
+
+
+def test_pdf_at_the_page_cap_is_accepted() -> None:
+    sections, page_count = parse_pdf(_pdf_with_pages(2), max_pages=2)
+    assert page_count == 2
+    assert sections
 
 
 def test_docx_reads_heading_styles_into_the_trail() -> None:

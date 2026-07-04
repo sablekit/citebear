@@ -44,6 +44,14 @@ class UnsupportedMediaTypeError(ValueError):
     """The upload's mime type has no parser (e.g. an image, a spreadsheet)."""
 
 
+class PageLimitError(ValueError):
+    """A PDF has more pages than the ingestion cap allows.
+
+    Raised mid-parse so an oversized document is rejected the moment it crosses
+    the cap, without laying out the remaining hundreds of pages into memory.
+    """
+
+
 def mime_from_filename(filename: str) -> str:
     """Resolve the parser mime from a filename extension (uploads carry only a
     filename, SPEC §6); raises for anything without a parser."""
@@ -108,16 +116,22 @@ def _assemble_sections(blocks: list[Block], body_separator: str = "\n\n") -> lis
     return sections
 
 
-def parse_pdf(data: bytes) -> tuple[list[Section], int]:
+def parse_pdf(data: bytes, max_pages: int | None = None) -> tuple[list[Section], int]:
     """Parse a PDF into sections, recovering headings from font sizes.
 
     Uses pdfminer.six directly (rather than pdfplumber, which drags in
     pypdfium2 + Pillow we don't use) — text lines carry their per-glyph font
     size (`LTChar.size`), which is all the heading heuristic needs.
+
+    `extract_pages` is lazy, so passing `max_pages` lets an oversized document
+    be rejected (via `PageLimitError`) the moment it crosses the cap, before
+    the remaining pages are laid out.
     """
     lines: list[tuple[str, float, int]] = []  # (text, rounded size, page)
     page_count = 0
     for page_number, page_layout in enumerate(extract_pages(io.BytesIO(data)), start=1):
+        if max_pages is not None and page_number > max_pages:
+            raise PageLimitError(page_number)
         page_count = page_number
         for element in page_layout:
             if not isinstance(element, LTTextContainer):
@@ -175,12 +189,18 @@ def parse_docx(data: bytes) -> tuple[list[Section], None]:
     return _assemble_sections(blocks), None
 
 
-def parse_document(data: bytes, mime_type: str) -> tuple[list[Section], int | None]:
-    """Dispatch to the parser for a mime type; raises for unsupported types."""
+def parse_document(
+    data: bytes, mime_type: str, max_pages: int | None = None
+) -> tuple[list[Section], int | None]:
+    """Dispatch to the parser for a mime type; raises for unsupported types.
+
+    `max_pages` caps PDF parsing (raising `PageLimitError`); other formats have
+    no page count and ignore it.
+    """
     if mime_type == MARKDOWN_MIME:
         return markdown_sections(data.decode("utf-8")), None
     if mime_type == PDF_MIME:
-        return parse_pdf(data)
+        return parse_pdf(data, max_pages=max_pages)
     if mime_type == DOCX_MIME:
         return parse_docx(data)
     raise UnsupportedMediaTypeError(mime_type)

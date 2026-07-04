@@ -25,7 +25,12 @@ from citebear_api.chunking import chunk_sections
 from citebear_api.db import get_session_factory, run_async
 from citebear_api.gateway import get_embeddings
 from citebear_api.models import Chunk, Document
-from citebear_api.parsing import UnsupportedMediaTypeError, mime_from_filename, parse_document
+from citebear_api.parsing import (
+    PageLimitError,
+    UnsupportedMediaTypeError,
+    mime_from_filename,
+    parse_document,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,15 +67,17 @@ async def ingest_document(
         raise IngestionError(f"Document exceeds the {MAX_DOCUMENT_BYTES // (1024 * 1024)} MB limit")
 
     try:
-        sections, page_count = parse_document(data, mime_type)  # raises for unsupported types
+        # cap pages during parse so an oversized PDF is rejected before it is
+        # fully laid out into memory, not after
+        sections, page_count = parse_document(data, mime_type, max_pages=MAX_PAGES)
     except (UnsupportedMediaTypeError, IngestionError):
         raise
+    except PageLimitError as exc:
+        raise IngestionError(f"Document exceeds the {MAX_PAGES}-page limit") from exc
     except Exception as exc:
         # a mislabeled or corrupt file (bytes that don't match the extension)
         # reaches the parser here; surface it as a clean rejection, not a 500
         raise IngestionError("The document could not be parsed; it may be corrupt.") from exc
-    if page_count is not None and page_count > MAX_PAGES:
-        raise IngestionError(f"Document exceeds the {MAX_PAGES}-page limit")
     drafts = chunk_sections(sections)
     if not drafts:
         raise IngestionError(
