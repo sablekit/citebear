@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.14",
     "fastapi>=0.115",
+    "httpx>=0.28",  # fetch uploaded originals from Blob; call the Blob delete API
     "langchain-openai>=0.3",
     "langchain-text-splitters>=0.3",
     "pdfplumber>=0.11",
@@ -22,7 +23,6 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.3",
-    "httpx>=0.28",
     "ruff>=0.9",
     "pyright>=1.1",
     "fpdf2>=2.8",  # generate PDF fixtures with known font sizes for the parser tests

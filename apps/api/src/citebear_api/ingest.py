@@ -1,13 +1,14 @@
-"""Markdown ingestion command (Milestone 1: the hardcoded library).
+"""Document ingestion (SPEC §5.1).
 
-Usage:
-    uv run python -m citebear_api.ingest docs/SPEC.md \
-        --title "CiteBear Specification" \
-        --source-url https://github.com/sablekit/citebear/blob/main/docs/SPEC.md
+The production path — fetch an uploaded original from Blob, parse by mime type,
+chunk, embed, insert — and a thin Markdown CLI wrapper (used to load the
+self-owned corpus and the golden set). Both share `ingest_document`, which
+mirrors the pipeline stages: register the document as processing, embed +
+insert, mark ready; on failure mark failed with the reason.
 
-Mirrors the production pipeline stages (SPEC §5.1): register the document
-as processing, parse + chunk, embed batched, insert chunks, mark ready —
-with a failed status and error message on any failure.
+Ingestion runs synchronously within the request (SPEC §5.1): serverless offers
+no safe fire-and-forget, so the work is held on the HTTP connection and the
+admin UI polls the status the row records.
 """
 
 import argparse
@@ -15,32 +16,63 @@ import uuid
 from pathlib import Path
 
 from sqlalchemy import delete, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from citebear_api.chunking import chunk_markdown
+from citebear_api.blob import fetch_blob
+from citebear_api.chunking import chunk_sections
 from citebear_api.db import get_session_factory, run_async
 from citebear_api.gateway import get_embeddings
 from citebear_api.models import Chunk, Document
+from citebear_api.parsing import MARKDOWN_MIME, parse_document
+
+MAX_DOCUMENT_BYTES = 20 * 1024 * 1024  # 20 MB (SPEC §5.1)
+MAX_PAGES = 300
 
 
-async def ingest_markdown(path: Path, title: str, source_url: str) -> tuple[uuid.UUID, int]:
-    """Ingest one markdown file; returns (document id, chunk count).
+class IngestionError(ValueError):
+    """A document cannot be ingested; the message is safe to show the admin."""
 
-    Re-ingesting a file with the same filename replaces the previous
-    document only in the same transaction that marks the new one ready,
-    so the old version keeps serving if embedding fails partway.
+
+async def ingest_document(
+    *,
+    data: bytes,
+    filename: str,
+    title: str,
+    mime_type: str,
+    source_url: str,
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
+) -> tuple[uuid.UUID, int]:
+    """Ingest one document's bytes; returns (document id, chunk count).
+
+    Parse and chunk happen before any row is written, so a deterministic input
+    error (unsupported type, oversize, no extractable text) is rejected cleanly
+    with no orphan row. Only a failure after the document is registered — a
+    gateway or database fault mid-embed — flips the row to failed, where the
+    admin can see the reason and retry.
+
+    Re-ingesting a file with the same filename replaces the previous document
+    only in the same transaction that marks the new one ready, so the old
+    version keeps serving if embedding fails partway.
     """
-    text = path.read_text(encoding="utf-8")
-    drafts = chunk_markdown(text)
-    if not drafts:
-        raise ValueError(f"{path} produced no chunks")
+    if len(data) > MAX_DOCUMENT_BYTES:
+        raise IngestionError(f"Document exceeds the {MAX_DOCUMENT_BYTES // (1024 * 1024)} MB limit")
 
-    session_factory = get_session_factory()
+    sections, page_count = parse_document(data, mime_type)  # raises for unsupported types
+    if page_count is not None and page_count > MAX_PAGES:
+        raise IngestionError(f"Document exceeds the {MAX_PAGES}-page limit")
+    drafts = chunk_sections(sections)
+    if not drafts:
+        raise IngestionError(
+            "No extractable text (an image-only PDF needs OCR, which v1 does not do)"
+        )
+
+    session_factory = session_factory or get_session_factory()
 
     async with session_factory() as session:
         document = Document(
             title=title,
-            filename=path.name,
-            mime_type="text/markdown",
+            filename=filename,
+            mime_type=mime_type,
             source_url=source_url,
             status="processing",
         )
@@ -50,6 +82,8 @@ async def ingest_markdown(path: Path, title: str, source_url: str) -> tuple[uuid
         await session.commit()
 
     try:
+        # embed outside the write transaction so no DB connection is held across
+        # the gateway round trip
         vectors = await get_embeddings().aembed_documents([draft.embed_text for draft in drafts])
         async with session_factory() as session:
             session.add_all(
@@ -66,10 +100,12 @@ async def ingest_markdown(path: Path, title: str, source_url: str) -> tuple[uuid
                 for draft, vector in zip(drafts, vectors, strict=True)
             )
             await session.execute(
-                update(Document).where(Document.id == document_id).values(status="ready")
+                update(Document)
+                .where(Document.id == document_id)
+                .values(status="ready", page_count=page_count)
             )
             await session.execute(
-                delete(Document).where(Document.filename == path.name, Document.id != document_id)
+                delete(Document).where(Document.filename == filename, Document.id != document_id)
             )
             await session.commit()
     except Exception as exc:
@@ -83,6 +119,28 @@ async def ingest_markdown(path: Path, title: str, source_url: str) -> tuple[uuid
         raise
 
     return document_id, len(drafts)
+
+
+async def ingest_from_blob(
+    *, blob_url: str, filename: str, title: str, mime_type: str
+) -> tuple[uuid.UUID, int]:
+    """Fetch an uploaded original from Blob and ingest it. The Blob URL is the
+    document's source_url, so the citation viewer links straight to it."""
+    data = await fetch_blob(blob_url)
+    return await ingest_document(
+        data=data, filename=filename, title=title, mime_type=mime_type, source_url=blob_url
+    )
+
+
+async def ingest_markdown(path: Path, title: str, source_url: str) -> tuple[uuid.UUID, int]:
+    """Ingest one local Markdown file (CLI + golden corpus)."""
+    return await ingest_document(
+        data=path.read_bytes(),
+        filename=path.name,
+        title=title,
+        mime_type=MARKDOWN_MIME,
+        source_url=source_url,
+    )
 
 
 def main() -> None:

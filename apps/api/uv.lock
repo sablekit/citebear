@@ -193,6 +193,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "langchain-openai" },
     { name = "langchain-text-splitters" },
     { name = "pdfplumber" },
@@ -209,7 +210,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "fpdf2" },
-    { name = "httpx" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
@@ -219,6 +219,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.14" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "langchain-openai", specifier = ">=0.3" },
     { name = "langchain-text-splitters", specifier = ">=0.3" },
     { name = "pdfplumber", specifier = ">=0.11" },
@@ -235,7 +236,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "fpdf2", specifier = ">=2.8" },
-    { name = "httpx", specifier = ">=0.28" },
     { name = "pyright", specifier = ">=1.1" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "ruff", specifier = ">=0.9" },
