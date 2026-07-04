@@ -5,12 +5,22 @@ document. The api fetches them for ingestion (public URL, no auth) and deletes
 them when a document is removed (authenticated with BLOB_READ_WRITE_TOKEN).
 """
 
+from urllib.parse import urlparse
+
 import httpx
 
 from citebear_api.config import get_settings
 
 _FETCH_TIMEOUT = 120.0  # a 20 MB original over a slow link still lands in time
 _DELETE_URL = "https://blob.vercel-storage.com/delete"
+_BLOB_HOST_SUFFIX = "blob.vercel-storage.com"
+
+
+def is_blob_url(url: str) -> bool:
+    """True for a Vercel Blob URL. Preloaded documents keep an external
+    canonical source_url (e.g. GitHub) that must never be deleted on removal."""
+    host = urlparse(url).hostname or ""
+    return host == _BLOB_HOST_SUFFIX or host.endswith(f".{_BLOB_HOST_SUFFIX}")
 
 
 async def fetch_blob(url: str) -> bytes:

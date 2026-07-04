@@ -14,6 +14,7 @@ heading styles Word records. Markdown reuses the header-splitter path.
 import io
 import statistics
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 
 import pdfplumber
 from docx import Document as DocxDocument
@@ -24,6 +25,13 @@ MARKDOWN_MIME = "text/markdown"
 PDF_MIME = "application/pdf"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
+_EXTENSION_MIME = {
+    ".pdf": PDF_MIME,
+    ".docx": DOCX_MIME,
+    ".md": MARKDOWN_MIME,
+    ".markdown": MARKDOWN_MIME,
+}
+
 MAX_HEADING_LEVEL = 4  # mirrors the markdown splitter (h1..h4)
 # a line whose font is this much larger than the body's is treated as a heading
 HEADING_SIZE_RATIO = 1.15
@@ -31,6 +39,15 @@ HEADING_SIZE_RATIO = 1.15
 
 class UnsupportedMediaTypeError(ValueError):
     """The upload's mime type has no parser (e.g. an image, a spreadsheet)."""
+
+
+def mime_from_filename(filename: str) -> str:
+    """Resolve the parser mime from a filename extension (uploads carry only a
+    filename, SPEC §6); raises for anything without a parser."""
+    suffix = PurePosixPath(filename).suffix.lower()
+    if suffix not in _EXTENSION_MIME:
+        raise UnsupportedMediaTypeError(filename)
+    return _EXTENSION_MIME[suffix]
 
 
 @dataclass(frozen=True)

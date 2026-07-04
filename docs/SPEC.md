@@ -281,8 +281,9 @@ documented in the README design notes.
 | POST | `/chat` | public | Ask a question; SSE stream (5.4) |
 | POST | `/feedback` | public | `{messageId, rating: 1\|-1}` |
 | GET | `/documents` | public | List ready documents (chat picker shows sources available) |
-| POST | `/admin/documents` | admin | Register an uploaded blob `{blobUrl, filename, title}`; returns doc id, starts ingestion |
-| DELETE | `/admin/documents/{id}` | admin | Delete document + chunks (cascade) |
+| POST | `/admin/documents` | admin | Register an uploaded blob `{blobUrl, filename, title}`; ingests synchronously, returns the document row |
+| GET | `/admin/documents` | admin | List documents in every status (drives the admin tab's status polling) |
+| DELETE | `/admin/documents/{id}` | admin | Delete document + chunks (cascade) + the Blob original |
 | GET | `/admin/questions` | admin | Paginated question log with feedback + grounded flag |
 | GET | `/admin/stats` | admin | Totals: questions, 👍/👎, refusal rate, docs |
 | GET | `/healthz` | public | Liveness + DB connectivity |
