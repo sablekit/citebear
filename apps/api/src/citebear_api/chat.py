@@ -10,11 +10,11 @@ import json
 import logging
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from sqlalchemy import select
@@ -37,7 +37,8 @@ from citebear_api.events import (
 )
 from citebear_api.generation import REFUSAL_TEXT, stream_answer
 from citebear_api.models import Message, MessageCitation
-from citebear_api.problems import problem
+from citebear_api.problems import problem, problem_response
+from citebear_api.rate_limit import RATE_LIMIT_PER_HOUR, RateLimitState, check_chat_rate_limit
 from citebear_api.rerank import RerankUnavailable, get_reranker
 from citebear_api.retrieval import FINAL_TOP_K, RetrievedChunk, embed_query, hybrid_retrieve
 
@@ -63,6 +64,7 @@ class ChatTurn:
 
 
 ChatStream = Callable[[ChatTurn], AsyncIterator[ChatEvent]]
+RateLimiter = Callable[[str], Awaitable[RateLimitState]]
 
 
 def hash_ip(ip: str) -> str:
@@ -221,19 +223,42 @@ def get_chat_stream() -> ChatStream:
     return run_chat_turn
 
 
+def get_rate_limiter() -> RateLimiter:
+    async def limiter(ip_hash: str) -> RateLimitState:
+        return await check_chat_rate_limit(get_session_factory(), ip_hash)
+
+    return limiter
+
+
 @router.post("/chat", dependencies=[Depends(require_internal_key)])
 async def chat(
     request: Request,
     body: ChatRequest,
     stream: Annotated[ChatStream, Depends(get_chat_stream)],
-) -> EventSourceResponse:
+    rate_limit: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> Response:
     # X-Client-IP is only trusted because the internal key was validated
     client_ip = request.headers.get("x-client-ip")
-    turn = ChatTurn(
-        session_id=body.session_id,
-        message=body.message,
-        ip_hash=hash_ip(client_ip) if client_ip else None,
-    )
+    ip_hash = hash_ip(client_ip) if client_ip else None
+
+    # A request that reached here with a valid internal key but no client IP did
+    # not pass Vercel's edge (which always sets x-real-ip) — in practice local
+    # dev. It can't originate from the public internet without the key, so it is
+    # deliberately not rate-limited rather than denied (which would wedge dev).
+    if ip_hash is not None:
+        state = await rate_limit(ip_hash)
+        if not state.allowed:
+            response = problem_response(
+                429,
+                "Too Many Requests",
+                f"Rate limit reached: {RATE_LIMIT_PER_HOUR} questions per hour. "
+                "Please try again later.",
+                retryAfter=state.retry_after,
+            )
+            response.headers["Retry-After"] = str(state.retry_after)
+            return response
+
+    turn = ChatTurn(session_id=body.session_id, message=body.message, ip_hash=ip_hash)
 
     async def sse_events() -> AsyncIterator[ServerSentEvent]:
         async for event in stream(turn):

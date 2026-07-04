@@ -4,10 +4,25 @@ from collections.abc import AsyncIterator
 from fastapi.testclient import TestClient
 
 from citebear_api.app import app
-from citebear_api.chat import ChatEvent, ChatStream, ChatTurn, get_chat_stream
+from citebear_api.chat import (
+    ChatEvent,
+    ChatStream,
+    ChatTurn,
+    get_chat_stream,
+    get_rate_limiter,
+)
+from citebear_api.rate_limit import RateLimitState
 
 VALID_BODY = {"sessionId": "3f2f8f6a-1234-4abc-9def-000000000001", "message": "What is RRF?"}
 KEY_HEADER = {"X-Internal-Key": "test-internal-key"}  # matches conftest env
+IP_HEADER = {"X-Client-IP": "203.0.113.7"}
+
+
+def _allow_all() -> object:
+    async def limiter(_ip_hash: str) -> RateLimitState:
+        return RateLimitState(allowed=True, retry_after=0)
+
+    return limiter
 
 
 def _fake_stream() -> tuple[ChatStream, list[ChatTurn]]:
@@ -76,18 +91,63 @@ def test_chat_streams_tokens_then_done() -> None:
 def test_chat_passes_session_and_hashed_ip_to_pipeline() -> None:
     stream, turns = _fake_stream()
     app.dependency_overrides[get_chat_stream] = lambda: stream
+    app.dependency_overrides[get_rate_limiter] = _allow_all
     try:
         client = TestClient(app)
-        client.post(
-            "/chat",
-            json=VALID_BODY,
-            headers=KEY_HEADER | {"X-Client-IP": "203.0.113.7"},
-        )
+        client.post("/chat", json=VALID_BODY, headers=KEY_HEADER | IP_HEADER)
         assert len(turns) == 1
         assert str(turns[0].session_id) == VALID_BODY["sessionId"]
         assert turns[0].message == VALID_BODY["message"]
         ip_hash = turns[0].ip_hash
         assert ip_hash is not None and len(ip_hash) == 64
         assert "203.0.113.7" not in ip_hash
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_chat_over_rate_limit_returns_problem_429() -> None:
+    stream, turns = _fake_stream()
+    app.dependency_overrides[get_chat_stream] = lambda: stream
+
+    def _deny() -> object:
+        async def limiter(_ip_hash: str) -> RateLimitState:
+            return RateLimitState(allowed=False, retry_after=42)
+
+        return limiter
+
+    app.dependency_overrides[get_rate_limiter] = _deny
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json=VALID_BODY, headers=KEY_HEADER | IP_HEADER)
+        assert response.status_code == 429
+        assert response.headers["content-type"].startswith("application/problem+json")
+        assert response.headers["Retry-After"] == "42"
+        payload = response.json()
+        assert payload["status"] == 429
+        assert payload["retryAfter"] == 42
+        # the request is rejected before the pipeline runs
+        assert turns == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_chat_without_client_ip_skips_rate_limit() -> None:
+    # no X-Client-IP (local dev): the limiter is never consulted, so no DB hit
+    stream, turns = _fake_stream()
+    app.dependency_overrides[get_chat_stream] = lambda: stream
+
+    def _explode() -> object:
+        async def limiter(_ip_hash: str) -> RateLimitState:
+            raise AssertionError("rate limiter must not run without a client IP")
+
+        return limiter
+
+    app.dependency_overrides[get_rate_limiter] = _explode
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json=VALID_BODY, headers=KEY_HEADER)
+        assert response.status_code == 200
+        assert len(turns) == 1
+        assert turns[0].ip_hash is None
     finally:
         app.dependency_overrides.clear()
