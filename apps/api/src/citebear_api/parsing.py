@@ -6,7 +6,7 @@ heading-stack fold turns into `Section`s. Those feed the single structure-aware
 chunker in `chunking.py`, so citation metadata (section trail, page range) is
 produced the same way regardless of source format.
 
-PDF uses **pdfplumber** (MIT) — font-size heuristics recover a heading
+PDF uses **pdfminer.six** (MIT) — font-size heuristics recover a heading
 hierarchy PDFs don't store explicitly. DOCX uses **python-docx**, reading the
 heading styles Word records. Markdown reuses the header-splitter path.
 """

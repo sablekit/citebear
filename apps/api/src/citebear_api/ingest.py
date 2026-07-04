@@ -1,8 +1,8 @@
 """Document ingestion (SPEC §5.1).
 
 The production path — fetch an uploaded original from Blob, parse by mime type,
-chunk, embed, insert — and a thin Markdown CLI wrapper (used to load the
-self-owned corpus and the golden set). Both share `ingest_document`, which
+chunk, embed, insert — and a local-file CLI wrapper (used to load the self-owned
+corpus, the golden set, and the preloaded library). Both share `ingest_document`, which
 mirrors the pipeline stages: register the document as processing, embed +
 insert, mark ready; on failure mark failed with the reason.
 
@@ -25,7 +25,7 @@ from citebear_api.chunking import chunk_sections
 from citebear_api.db import get_session_factory, run_async
 from citebear_api.gateway import get_embeddings
 from citebear_api.models import Chunk, Document
-from citebear_api.parsing import MARKDOWN_MIME, UnsupportedMediaTypeError, parse_document
+from citebear_api.parsing import UnsupportedMediaTypeError, mime_from_filename, parse_document
 
 logger = logging.getLogger(__name__)
 
@@ -170,25 +170,27 @@ async def ingest_from_blob(
     )
 
 
-async def ingest_markdown(path: Path, title: str, source_url: str) -> tuple[uuid.UUID, int]:
-    """Ingest one local Markdown file (CLI + golden corpus)."""
+async def ingest_local_file(path: Path, title: str, source_url: str) -> tuple[uuid.UUID, int]:
+    """Ingest one local file — the self-owned corpus, the golden set, and the
+    preloaded library all load this way. The parser mime is resolved from the
+    filename extension (PDF/DOCX/Markdown); anything else is rejected."""
     return await ingest_document(
         data=path.read_bytes(),
         filename=path.name,
         title=title,
-        mime_type=MARKDOWN_MIME,
+        mime_type=mime_from_filename(path.name),
         source_url=source_url,
     )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Ingest a markdown document")
+    parser = argparse.ArgumentParser(description="Ingest a local document (PDF/DOCX/Markdown)")
     parser.add_argument("path", type=Path)
     parser.add_argument("--title", required=True)
     parser.add_argument("--source-url", required=True, help="canonical URL of the original")
     args = parser.parse_args()
 
-    document_id, chunk_count = run_async(ingest_markdown(args.path, args.title, args.source_url))
+    document_id, chunk_count = run_async(ingest_local_file(args.path, args.title, args.source_url))
     print(f"ingested {args.path} -> document {document_id} ({chunk_count} chunks)")
 
 
