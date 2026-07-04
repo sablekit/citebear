@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 
+import { AdminDocuments } from "./admin-documents";
+
 /** Authenticated admin shell (SPEC §7). v1 has one tab — Documents; the
  * question log and stats tabs arrive in Milestone 5. */
 export function AdminDashboard() {
@@ -25,7 +27,7 @@ export function AdminDashboard() {
         </button>
       </header>
       <main className="flex flex-1 flex-col py-6">
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>
+        <AdminDocuments />
       </main>
     </div>
   );
