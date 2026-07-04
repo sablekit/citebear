@@ -9,12 +9,12 @@ dependencies = [
     "langchain-openai>=0.3",
     "langchain-text-splitters>=0.3",
     "pgvector>=0.3",
-    "psycopg[binary]>=3.2",
+    "psycopg[binary]>=3.3.4",
     "pydantic-settings>=2.7",
-    "sqlalchemy[asyncio]>=2.0.36",
+    "sqlalchemy[asyncio]>=2.0.51",
     "sse-starlette>=2.1",
     "tiktoken>=0.8",
-    "uvicorn[standard]>=0.34",
+    "uvicorn[standard]>=0.49.0",
 ]
 
 [dependency-groups]
