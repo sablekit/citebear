@@ -2,9 +2,12 @@ import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 
 import { env } from "@/env";
 import {
+  META_DATA_PART,
+  META_PART,
   SOURCES_DATA_PART,
   SOURCES_PART,
   SSE_EVENT,
+  type AnswerMeta,
   type CitebearUIMessage,
   type SourcesData,
 } from "@/lib/chat-events";
@@ -131,7 +134,13 @@ export async function POST(request: Request): Promise<Response> {
           }
           writer.write({ type: "text-delta", id: textId, delta });
         } else if (event === SSE_EVENT.done) {
-          // carries messageId/grounded; the feedback UI consumes it in Milestone 5
+          // messageId/grounded surfaced as a data part so the finished answer
+          // carries the id the 👍/👎 control posts feedback against
+          writer.write({
+            type: META_DATA_PART,
+            id: META_PART,
+            data: JSON.parse(data) as AnswerMeta,
+          });
           terminated = true;
         } else if (event === SSE_EVENT.error) {
           const problem = JSON.parse(data) as { title?: string; detail?: string };
