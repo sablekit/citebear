@@ -12,25 +12,32 @@ import { env } from "@/env";
  */
 export const ADMIN_COOKIE = "admin_session";
 
-function matchesAdminPassword(candidate: string): boolean {
+/** Constant-time compare of a candidate against the admin password. The single
+ * authoritative admin-password check (the login route mints the cookie with it). */
+export function matchesAdminPassword(candidate: string): boolean {
   const a = Buffer.from(candidate);
   const b = Buffer.from(env.ADMIN_PASSWORD);
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export async function isAdmin(): Promise<boolean> {
+/** The admin password from a valid session cookie, or null. */
+async function sessionPassword(): Promise<string | null> {
   const cookie = (await cookies()).get(ADMIN_COOKIE)?.value;
-  return cookie !== undefined && matchesAdminPassword(cookie);
+  return cookie !== undefined && matchesAdminPassword(cookie) ? cookie : null;
+}
+
+export async function isAdmin(): Promise<boolean> {
+  return (await sessionPassword()) !== null;
 }
 
 /**
  * Headers for forwarding an admin request to the Python API, or null when the
- * caller is not an authenticated admin. Combines the auth gate with building the
- * internal-key + Bearer pair every admin hop needs.
+ * caller is not an authenticated admin: the internal-key + Bearer pair every
+ * admin hop needs.
  */
 export async function adminApiHeaders(): Promise<Record<string, string> | null> {
-  const password = (await cookies()).get(ADMIN_COOKIE)?.value;
-  if (password === undefined || !matchesAdminPassword(password)) return null;
+  const password = await sessionPassword();
+  if (password === null) return null;
   return {
     "X-Internal-Key": env.INTERNAL_API_KEY,
     Authorization: `Bearer ${password}`,

@@ -1,8 +1,6 @@
-import { timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 
-import { env } from "@/env";
-import { ADMIN_COOKIE } from "@/lib/admin-auth";
+import { ADMIN_COOKIE, matchesAdminPassword } from "@/lib/admin-auth";
 import { problemResponse } from "@/lib/problem";
 
 /**
@@ -11,12 +9,6 @@ import { problemResponse } from "@/lib/problem";
  * Logout clears it.
  */
 
-function correctPassword(candidate: string): boolean {
-  const a = Buffer.from(candidate);
-  const b = Buffer.from(env.ADMIN_PASSWORD);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
 export async function POST(request: Request): Promise<Response> {
   let password: unknown;
   try {
@@ -24,7 +16,7 @@ export async function POST(request: Request): Promise<Response> {
   } catch {
     password = undefined;
   }
-  if (typeof password !== "string" || !correctPassword(password)) {
+  if (typeof password !== "string" || !matchesAdminPassword(password)) {
     return problemResponse(401, "Unauthorized", "Incorrect admin password.");
   }
   (await cookies()).set(ADMIN_COOKIE, password, {

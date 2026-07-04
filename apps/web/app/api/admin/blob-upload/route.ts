@@ -2,6 +2,7 @@ import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 
 import { env } from "@/env";
 import { isAdmin } from "@/lib/admin-auth";
+import { ALLOWED_CONTENT_TYPES } from "@/lib/document-types";
 import { problemResponse } from "@/lib/problem";
 
 /**
@@ -12,11 +13,6 @@ import { problemResponse } from "@/lib/problem";
  * The api fetches the resulting Blob URL to ingest it.
  */
 
-const ALLOWED_CONTENT_TYPES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "text/markdown",
-];
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 export async function POST(request: Request): Promise<Response> {
