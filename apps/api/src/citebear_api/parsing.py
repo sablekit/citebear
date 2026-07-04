@@ -13,11 +13,14 @@ heading styles Word records. Markdown reuses the header-splitter path.
 
 import io
 import statistics
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import PurePosixPath
+from typing import cast
 
-import pdfplumber
 from docx import Document as DocxDocument
+from pdfminer.high_level import extract_pages
+from pdfminer.layout import LTChar, LTTextContainer, LTTextLine
 
 from citebear_api.chunking import Section, markdown_sections
 
@@ -106,14 +109,25 @@ def _assemble_sections(blocks: list[Block], body_separator: str = "\n\n") -> lis
 
 
 def parse_pdf(data: bytes) -> tuple[list[Section], int]:
-    """Parse a PDF into sections, recovering headings from font sizes."""
+    """Parse a PDF into sections, recovering headings from font sizes.
+
+    Uses pdfminer.six directly (rather than pdfplumber, which drags in
+    pypdfium2 + Pillow we don't use) — text lines carry their per-glyph font
+    size (`LTChar.size`), which is all the heading heuristic needs.
+    """
     lines: list[tuple[str, float, int]] = []  # (text, rounded size, page)
-    with pdfplumber.open(io.BytesIO(data)) as pdf:
-        page_count = len(pdf.pages)
-        for page_number, page in enumerate(pdf.pages, start=1):
-            for line in page.extract_text_lines(return_chars=True):
-                text = str(line["text"]).strip()
-                sizes = [c["size"] for c in line["chars"] if c.get("size")]
+    page_count = 0
+    for page_number, page_layout in enumerate(extract_pages(io.BytesIO(data)), start=1):
+        page_count = page_number
+        for element in page_layout:
+            if not isinstance(element, LTTextContainer):
+                continue
+            # pdfminer's container iteration is untyped; narrow each line explicitly
+            for text_line in cast("Iterable[object]", element):
+                if not isinstance(text_line, LTTextLine):
+                    continue
+                sizes = [glyph.size for glyph in text_line if isinstance(glyph, LTChar)]
+                text = text_line.get_text().strip()
                 if not text or not sizes:
                     continue
                 lines.append((text, round(statistics.median(sizes), 1), page_number))
