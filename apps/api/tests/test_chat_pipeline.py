@@ -46,12 +46,12 @@ class _FakeSavepoint:
         self._session = session
 
     async def __aenter__(self) -> "_FakeSavepoint":
-        self._mark = len(self._session._added)
+        self._mark = len(self._session.added)
         return self
 
     async def __aexit__(self, exc_type: object, *_: object) -> bool:
         if exc_type is not None:
-            del self._session._added[self._mark :]
+            del self._session.added[self._mark :]
         return False  # propagate so the caller's except clause runs
 
 
@@ -59,7 +59,7 @@ class _FakeSession:
     """Minimal async session: records added rows, assigns ids on flush."""
 
     def __init__(self, added: list[object], deleted: frozenset[UUID] = frozenset()) -> None:
-        self._added = added
+        self.added = added
         self._deleted = deleted  # chunk ids that FK-fail on insert (deleted mid-turn)
 
     async def __aenter__(self) -> "_FakeSession":
@@ -72,7 +72,7 @@ class _FakeSession:
         return _FakeResult()
 
     def add(self, obj: object) -> None:
-        self._added.append(obj)
+        self.added.append(obj)
 
     def begin_nested(self) -> _FakeSavepoint:
         return _FakeSavepoint(self)
@@ -80,7 +80,7 @@ class _FakeSession:
     async def flush(self) -> None:
         # the real server_default assigns ids in the DB; do it here so the
         # post-check can read assistant_message.id
-        for obj in self._added:
+        for obj in self.added:
             if isinstance(obj, Message) and getattr(obj, "id", None) is None:
                 obj.id = uuid4()
             if isinstance(obj, MessageCitation) and obj.chunk_id in self._deleted:
