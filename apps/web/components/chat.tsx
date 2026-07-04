@@ -41,6 +41,14 @@ function metaOf(message: CitebearUIMessage): AnswerMeta | null {
   return null;
 }
 
+// A pre-stream error (rate-limit 429, upstream 5xx) is surfaced as an error-only
+// message stream; the SDK still pushes an assistant message for it, but with no
+// text and no sources. Skip those so a failed turn shows the error banner, not a
+// blank bubble. A streaming answer always has a sources part or text.
+function isRenderableAssistant(message: CitebearUIMessage): boolean {
+  return messageText(message) !== "" || sourcesOf(message) !== null;
+}
+
 // 👍/👎 on a finished answer (SPEC §7). Optimistic: the button reflects the
 // choice immediately and reverts if the POST fails. The API upserts one row
 // per message, so switching or re-clicking is idempotent.
@@ -205,9 +213,9 @@ export function Chat() {
               >
                 {messageText(message)}
               </li>
-            ) : (
+            ) : isRenderableAssistant(message) ? (
               <AssistantMessage key={message.id} message={message} onSelect={setActiveCitation} />
-            ),
+            ) : null,
           )}
           {status === "submitted" && (
             <li className="self-start px-4 py-2 text-sm text-zinc-400" aria-label="Thinking">
