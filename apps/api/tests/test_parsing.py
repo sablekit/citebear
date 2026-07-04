@@ -70,6 +70,36 @@ def test_pdf_body_is_not_all_headings() -> None:
     assert "Body line 0" in section.body
 
 
+def _pdf_with_bold_same_size_heading() -> bytes:
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", style="B", size=11)  # bold, same size as body
+    pdf.cell(0, 6, "Configuration", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", size=11)
+    for i in range(4):
+        pdf.cell(
+            0, 6, f"Body sentence {i} explaining configuration.", new_x="LMARGIN", new_y="NEXT"
+        )
+    return bytes(pdf.output())
+
+
+def test_pdf_detects_bold_same_size_heading() -> None:
+    # font size alone can't see a bold heading set at body size; the weight signal must
+    sections, _ = parse_pdf(_pdf_with_bold_same_size_heading())
+    assert ["Configuration"] in [s.section_path for s in sections]
+
+
+def test_pdf_bold_body_sentence_is_not_a_heading() -> None:
+    # a fully-bold line that reads like a sentence (ends in a period) stays body text,
+    # so inline-emphasized prose doesn't fragment into spurious sections
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", style="B", size=11)
+    pdf.cell(0, 6, "This whole sentence is emphasized in bold.", new_x="LMARGIN", new_y="NEXT")
+    sections, _ = parse_pdf(bytes(pdf.output()))
+    assert all("emphasized" not in path for s in sections for path in s.section_path)
+
+
 def _pdf_with_pages(count: int) -> bytes:
     pdf = FPDF()
     for page in range(count):

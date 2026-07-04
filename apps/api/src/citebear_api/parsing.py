@@ -6,9 +6,10 @@ heading-stack fold turns into `Section`s. Those feed the single structure-aware
 chunker in `chunking.py`, so citation metadata (section trail, page range) is
 produced the same way regardless of source format.
 
-PDF uses **pdfminer.six** (MIT) — font-size heuristics recover a heading
-hierarchy PDFs don't store explicitly. DOCX uses **python-docx**, reading the
-heading styles Word records. Markdown reuses the header-splitter path.
+PDF uses **pdfminer.six** (MIT) — font-size and weight heuristics recover a
+heading hierarchy PDFs don't store explicitly. DOCX uses **python-docx**,
+reading the heading styles Word records. Markdown reuses the header-splitter
+path.
 """
 
 import io
@@ -38,6 +39,22 @@ _EXTENSION_MIME = {
 MAX_HEADING_LEVEL = 4  # mirrors the markdown splitter (h1..h4)
 # a line whose font is this much larger than the body's is treated as a heading
 HEADING_SIZE_RATIO = 1.15
+# a fully-bold line no longer than this (in words) is treated as a heading even
+# at body size — manuals often set same-size bold headings that font size alone
+# would miss
+BOLD_HEADING_MAX_WORDS = 12
+
+
+def _line_is_bold(fonts: list[str]) -> bool:
+    """True when every glyph on a line uses a bold font face (a partly-bold line
+    is inline emphasis, not a heading)."""
+    return bool(fonts) and all("bold" in font.lower() for font in fonts)
+
+
+def _bold_heading_like(text: str) -> bool:
+    """A short, fully-bold line that doesn't read like a sentence is very likely
+    a body-size heading rather than emphasized prose."""
+    return len(text.split()) <= BOLD_HEADING_MAX_WORDS and not text.endswith(".")
 
 
 class UnsupportedMediaTypeError(ValueError):
@@ -121,13 +138,14 @@ def parse_pdf(data: bytes, max_pages: int | None = None) -> tuple[list[Section],
 
     Uses pdfminer.six directly (rather than pdfplumber, which drags in
     pypdfium2 + Pillow we don't use) — text lines carry their per-glyph font
-    size (`LTChar.size`), which is all the heading heuristic needs.
+    size and font name (`LTChar.size` / `.fontname`), which is all the
+    size-plus-weight heading heuristic needs.
 
     `extract_pages` is lazy, so passing `max_pages` lets an oversized document
     be rejected (via `PageLimitError`) the moment it crosses the cap, before
     the remaining pages are laid out.
     """
-    lines: list[tuple[str, float, int]] = []  # (text, rounded size, page)
+    lines: list[tuple[str, float, bool, int]] = []  # (text, rounded size, bold, page)
     page_count = 0
     for page_number, page_layout in enumerate(extract_pages(io.BytesIO(data)), start=1):
         if max_pages is not None and page_number > max_pages:
@@ -140,21 +158,37 @@ def parse_pdf(data: bytes, max_pages: int | None = None) -> tuple[list[Section],
             for text_line in cast("Iterable[object]", element):
                 if not isinstance(text_line, LTTextLine):
                     continue
-                sizes = [glyph.size for glyph in text_line if isinstance(glyph, LTChar)]
+                glyphs = [glyph for glyph in text_line if isinstance(glyph, LTChar)]
                 text = text_line.get_text().strip()
-                if not text or not sizes:
+                if not text or not glyphs:
                     continue
-                lines.append((text, round(statistics.median(sizes), 1), page_number))
+                size = round(statistics.median(glyph.size for glyph in glyphs), 1)
+                bold = _line_is_bold([glyph.fontname for glyph in glyphs])
+                lines.append((text, size, bold, page_number))
 
     if not lines:
         return [], page_count  # image-only / empty PDF; ingestion turns this into a clear error
 
-    body_size = statistics.mode(size for _, size, _ in lines)
+    body_size = statistics.mode(size for _, size, _, _ in lines)
     heading_sizes = sorted(
-        {size for _, size, _ in lines if size >= body_size * HEADING_SIZE_RATIO}, reverse=True
+        {size for _, size, _, _ in lines if size >= body_size * HEADING_SIZE_RATIO}, reverse=True
     )
     level_of = {size: index + 1 for index, size in enumerate(heading_sizes)}
-    blocks = [Block(text=text, level=level_of.get(size), page=page) for text, size, page in lines]
+    # bold body-size headings sort below every larger-font heading level
+    bold_level = min(len(heading_sizes) + 1, MAX_HEADING_LEVEL)
+
+    def level_for(text: str, size: float, bold: bool) -> int | None:
+        by_size = level_of.get(size)
+        if by_size is not None:
+            return by_size
+        if bold and _bold_heading_like(text):
+            return bold_level
+        return None
+
+    blocks = [
+        Block(text=text, level=level_for(text, size, bold), page=page)
+        for text, size, bold, page in lines
+    ]
     return _assemble_sections(blocks, body_separator="\n"), page_count
 
 
