@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from citebear_api.blob import delete_blob, fetch_blob, is_blob_url
 from citebear_api.chunking import chunk_sections
 from citebear_api.db import get_session_factory, run_async
-from citebear_api.gateway import get_embeddings
+from citebear_api.gateway import embed_texts
 from citebear_api.models import Chunk, Document
 from citebear_api.parsing import (
     PageLimitError,
@@ -101,8 +101,8 @@ async def ingest_document(
 
     try:
         # embed outside the write transaction so no DB connection is held across
-        # the gateway round trip
-        vectors = await get_embeddings().aembed_documents([draft.embed_text for draft in drafts])
+        # the gateway round trip; batched + bounded-concurrency for large documents
+        vectors = await embed_texts([draft.embed_text for draft in drafts])
         async with session_factory() as session:
             session.add_all(
                 Chunk(
