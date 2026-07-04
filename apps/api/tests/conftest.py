@@ -9,5 +9,6 @@ import os
 os.environ.setdefault("DATABASE_URL", "postgresql://citebear:citebear@localhost:5432/citebear")
 os.environ.setdefault("GATEWAY_API_KEY", "test-gateway-key")
 os.environ.setdefault("INTERNAL_API_KEY", "test-internal-key")
+os.environ.setdefault("IP_HASH_SECRET", "test-ip-hash-secret")
 os.environ.setdefault("ADMIN_PASSWORD", "test-admin-password")
 os.environ.setdefault("BLOB_READ_WRITE_TOKEN", "test-blob-token")

@@ -66,8 +66,12 @@ ChatStream = Callable[[ChatTurn], AsyncIterator[ChatEvent]]
 
 
 def hash_ip(ip: str) -> str:
-    """Keyed hash: rate-limit counting works, raw IPs are not recoverable."""
-    key = get_settings().internal_api_key.encode()
+    """Keyed hash: rate-limit counting works, raw IPs are not recoverable.
+
+    Keyed with a dedicated IP_HASH_SECRET, not the web->api key, so the two
+    rotate independently and neither leaks the other (#9).
+    """
+    key = get_settings().ip_hash_secret.encode()
     return hmac.new(key, ip.encode(), hashlib.sha256).hexdigest()
 
 

@@ -61,8 +61,12 @@ async function* parseSse(body: ReadableStream<Uint8Array>): AsyncGenerator<Upstr
 
 export async function POST(request: Request): Promise<Response> {
   const body = await request.text();
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  const clientIp = forwardedFor?.split(",")[0]?.trim();
+  // Trust only the hop Vercel's edge observed: x-real-ip is set by the platform
+  // from the real TCP peer and overwrites any client-supplied value. The
+  // leftmost x-forwarded-for entry is client-controlled and spoofable, so it
+  // must not drive rate limiting (#9). Absent (local dev / non-Vercel) → no IP
+  // is forwarded and the api attributes the turn to no bucket.
+  const clientIp = request.headers.get("x-real-ip")?.trim() || undefined;
 
   let upstream: Response;
   try {
