@@ -23,7 +23,8 @@ from citebear_api.parsing import (
     mime_from_filename,
 )
 
-ADMIN_HEADER = {"Authorization": "Bearer test-admin-password"}  # matches conftest env
+INTERNAL_HEADER = {"X-Internal-Key": "test-internal-key"}  # matches conftest env
+BEARER_HEADER = {"Authorization": "Bearer test-admin-password"}  # matches conftest env
 
 
 @pytest.mark.parametrize(
@@ -98,7 +99,22 @@ def test_admin_routes_reject_missing_credentials() -> None:
         assert response.headers["content-type"].startswith("application/problem+json")
 
 
+def test_admin_routes_require_admin_bearer_even_with_internal_key() -> None:
+    # the internal key alone (a chat-only visitor) must not reach admin routes
+    client = TestClient(app)
+    response = client.get("/admin/documents", headers=INTERNAL_HEADER)
+    assert response.status_code == 401
+
+
 def test_admin_routes_reject_wrong_password() -> None:
     client = TestClient(app)
-    response = client.get("/admin/documents", headers={"Authorization": "Bearer nope"})
+    response = client.get(
+        "/admin/documents", headers=INTERNAL_HEADER | {"Authorization": "Bearer nope"}
+    )
     assert response.status_code == 401
+
+
+def test_public_documents_list_requires_the_internal_key() -> None:
+    # /documents is proxied, not browser-facing: no key -> rejected
+    client = TestClient(app)
+    assert client.get("/documents").status_code == 401

@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from sqlalchemy import select
@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
+from citebear_api.auth import require_internal_key
 from citebear_api.citations import build_citations, cited_markers
 from citebear_api.condense import condense_question
 from citebear_api.confidence import LOW, assess
@@ -62,16 +63,6 @@ class ChatTurn:
 
 
 ChatStream = Callable[[ChatTurn], AsyncIterator[ChatEvent]]
-
-
-def require_internal_key(
-    x_internal_key: Annotated[str | None, Header()] = None,
-) -> None:
-    expected = get_settings().internal_api_key
-    if x_internal_key is None or not hmac.compare_digest(
-        x_internal_key.encode(), expected.encode()
-    ):
-        raise HTTPException(status_code=401, detail="Missing or invalid internal API key")
 
 
 def hash_ip(ip: str) -> str:

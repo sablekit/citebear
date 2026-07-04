@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 from sqlalchemy import select
 
-from citebear_api.auth import require_admin
+from citebear_api.auth import require_admin, require_internal_key
 from citebear_api.blob import delete_blob, is_blob_url
 from citebear_api.db import get_session_factory
 from citebear_api.ingest import IngestionError, ingest_from_blob
@@ -56,7 +56,7 @@ class AdminDocumentOut(DocumentOut):
     created_at: datetime
 
 
-@router.get("/documents")
+@router.get("/documents", dependencies=[Depends(require_internal_key)])
 async def list_documents() -> list[DocumentOut]:
     async with get_session_factory()() as session:
         rows = (
@@ -67,7 +67,10 @@ async def list_documents() -> list[DocumentOut]:
         return [DocumentOut.model_validate(row) for row in rows]
 
 
-@router.get("/admin/documents", dependencies=[Depends(require_admin)])
+@router.get(
+    "/admin/documents",
+    dependencies=[Depends(require_internal_key), Depends(require_admin)],
+)
 async def list_admin_documents() -> list[AdminDocumentOut]:
     async with get_session_factory()() as session:
         rows = (
@@ -78,7 +81,7 @@ async def list_admin_documents() -> list[AdminDocumentOut]:
 
 @router.post(
     "/admin/documents",
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_internal_key), Depends(require_admin)],
     status_code=status.HTTP_201_CREATED,
 )
 async def register_document(body: RegisterDocumentRequest) -> AdminDocumentOut:
@@ -108,7 +111,7 @@ async def register_document(body: RegisterDocumentRequest) -> AdminDocumentOut:
 
 @router.delete(
     "/admin/documents/{document_id}",
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_internal_key), Depends(require_admin)],
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_document(document_id: uuid.UUID) -> Response:
