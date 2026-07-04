@@ -18,6 +18,12 @@ updates:
       # this entry and migrate deliberately.
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
+      # @types/node tracks the Node.js runtime major (currently 24 on
+      # Vercel/CI/local). Bump it deliberately together with the runtime,
+      # not on Dependabot's schedule, so the types never describe APIs the
+      # runtime lacks.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "uv"
     directory: "/apps/api"
     schedule:
