@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     gateway_base_url: str = "https://ai-gateway.vercel.sh/v1"
     gateway_api_key: str
     internal_api_key: str
+    admin_password: str
+    blob_read_write_token: str
     chat_model: str = "anthropic/claude-haiku-4-5"
     rerank_model: str = "anthropic/claude-haiku-4-5"
     embedding_model: str = "openai/text-embedding-3-small"

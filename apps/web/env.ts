@@ -11,6 +11,10 @@ export const env = createEnv({
     API_URL: z.url(),
     /** Shared secret for the web -> api hop. */
     INTERNAL_API_KEY: z.string().min(1),
+    /** Admin password: gates /admin and is forwarded as the api Bearer token. */
+    ADMIN_PASSWORD: z.string().min(1),
+    /** Vercel Blob token: mints scoped client-upload tokens for the admin. */
+    BLOB_READ_WRITE_TOKEN: z.string().min(1),
   },
   client: {},
   experimental__runtimeEnv: {},

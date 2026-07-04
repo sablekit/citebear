@@ -32,6 +32,8 @@ jobs:
           # can pass in a build that never serves traffic
           API_URL: http://localhost:8000
           INTERNAL_API_KEY: ci-build-placeholder
+          ADMIN_PASSWORD: ci-build-placeholder
+          BLOB_READ_WRITE_TOKEN: ci-build-placeholder
 
   api:
     runs-on: ubuntu-latest

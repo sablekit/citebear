@@ -38,6 +38,23 @@ class ChunkDraft:
     page_end: int | None = None
 
 
+@dataclass(frozen=True)
+class Section:
+    """A heading-delimited region of a document, before size-splitting.
+
+    The normalized unit every parser (markdown, PDF, DOCX) produces: a heading
+    trail plus its body text and the pages that body spans. `chunk_sections`
+    turns it into one or more `ChunkDraft`s, splitting oversized bodies without
+    crossing the heading boundary. Sources without pages leave the range None.
+    """
+
+    section_path: list[str]
+    heading_line: str  # e.g. "## Install", reattached to the first chunk; "" if none
+    body: str
+    page_start: int | None = None
+    page_end: int | None = None
+
+
 @lru_cache
 def _encoding() -> tiktoken.Encoding:
     return tiktoken.get_encoding(ENCODING_NAME)
@@ -76,25 +93,18 @@ def _split_section(heading_line: str, body: str) -> list[str]:
     return [prefix + pieces[0], *pieces[1:]] if pieces else []
 
 
-def chunk_markdown(text: str) -> list[ChunkDraft]:
-    header_splitter = MarkdownHeaderTextSplitter(_HEADERS, strip_headers=True)
-
+def chunk_sections(sections: list[Section]) -> list[ChunkDraft]:
+    """Split each section's body under the token target, never crossing its
+    heading. The section's page range rides onto every chunk it produces —
+    coarse for a long split section, but the cited passage always lies within
+    it (and most heading-delimited sections fit in one chunk anyway)."""
     drafts: list[ChunkDraft] = []
-    for section in header_splitter.split_text(text):
-        section_path = [
-            str(section.metadata[key]) for _, key in _HEADERS if key in section.metadata
-        ]
-        heading_line = ""
-        for marker, key in reversed(_HEADERS):
-            if key in section.metadata:
-                heading_line = f"{marker} {section.metadata[key]}"
-                break
-
-        body = section.page_content.strip()
+    for section in sections:
+        body = section.body.strip()
         if not body:
             continue
-        trail = " > ".join(section_path)
-        for piece_index, piece in enumerate(_split_section(heading_line, body)):
+        trail = " > ".join(section.section_path)
+        for piece_index, piece in enumerate(_split_section(section.heading_line, body)):
             content = piece.strip()
             if not content:
                 continue
@@ -107,7 +117,33 @@ def chunk_markdown(text: str) -> list[ChunkDraft]:
                     content=content,
                     embed_text=embed_text,
                     token_count=count_tokens(content),
-                    section_path=section_path,
+                    section_path=section.section_path,
+                    page_start=section.page_start,
+                    page_end=section.page_end,
                 )
             )
     return drafts
+
+
+def markdown_sections(text: str) -> list[Section]:
+    """Split markdown into heading-delimited sections (no page numbers)."""
+    header_splitter = MarkdownHeaderTextSplitter(_HEADERS, strip_headers=True)
+
+    sections: list[Section] = []
+    for section in header_splitter.split_text(text):
+        section_path = [
+            str(section.metadata[key]) for _, key in _HEADERS if key in section.metadata
+        ]
+        heading_line = ""
+        for marker, key in reversed(_HEADERS):
+            if key in section.metadata:
+                heading_line = f"{marker} {section.metadata[key]}"
+                break
+        sections.append(
+            Section(section_path=section_path, heading_line=heading_line, body=section.page_content)
+        )
+    return sections
+
+
+def chunk_markdown(text: str) -> list[ChunkDraft]:
+    return chunk_sections(markdown_sections(text))

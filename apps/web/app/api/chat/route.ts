@@ -8,6 +8,7 @@ import {
   type CitebearUIMessage,
   type SourcesData,
 } from "@/lib/chat-events";
+import { problemResponse } from "@/lib/problem";
 
 /**
  * Streaming proxy: forwards the chat request to the Python API (adding the
@@ -56,13 +57,6 @@ async function* parseSse(body: ReadableStream<Uint8Array>): AsyncGenerator<Upstr
       newlineIndex = buffer.indexOf("\n");
     }
   }
-}
-
-function problemResponse(status: number, title: string, detail: string): Response {
-  return Response.json(
-    { type: "about:blank", title, status, detail },
-    { status, headers: { "Content-Type": "application/problem+json" } },
-  );
 }
 
 export async function POST(request: Request): Promise<Response> {

@@ -7,9 +7,10 @@ marker -> chunk mapping without touching a real database.
 
 import asyncio
 from collections.abc import AsyncIterator
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from citebear_api import chat
 from citebear_api.chat import ChatEvent, ChatTurn, run_chat_turn
@@ -37,11 +38,35 @@ class _FakeResult:
         return []  # no history
 
 
+class _FakeSavepoint:
+    """Models session.begin_nested(): on error, roll back to the savepoint
+    (drop rows added inside it) and let the exception propagate."""
+
+    def __init__(self, session: "_FakeSession") -> None:
+        self._session = session
+
+    async def __aenter__(self) -> "_FakeSavepoint":
+        self._mark = len(self._session.added)
+        return self
+
+    async def __aexit__(self, exc_type: object, *_: object) -> bool:
+        if exc_type is not None:
+            del self._session.added[self._mark :]
+        return False  # propagate so the caller's except clause runs
+
+
 class _FakeSession:
     """Minimal async session: records added rows, assigns ids on flush."""
 
-    def __init__(self, added: list[object]) -> None:
-        self._added = added
+    def __init__(
+        self,
+        added: list[object],
+        deleted: frozenset[UUID] = frozenset(),
+        exploded: frozenset[UUID] = frozenset(),
+    ) -> None:
+        self.added = added
+        self._deleted = deleted  # chunk ids that FK-fail on insert (deleted mid-turn)
+        self._exploded = exploded  # chunk ids that raise a non-IntegrityError on insert
 
     async def __aenter__(self) -> "_FakeSession":
         return self
@@ -53,21 +78,32 @@ class _FakeSession:
         return _FakeResult()
 
     def add(self, obj: object) -> None:
-        self._added.append(obj)
+        self.added.append(obj)
+
+    def begin_nested(self) -> _FakeSavepoint:
+        return _FakeSavepoint(self)
 
     async def flush(self) -> None:
         # the real server_default assigns ids in the DB; do it here so the
         # post-check can read assistant_message.id
-        for obj in self._added:
+        for obj in self.added:
             if isinstance(obj, Message) and getattr(obj, "id", None) is None:
                 obj.id = uuid4()
+            if isinstance(obj, MessageCitation) and obj.chunk_id in self._deleted:
+                raise IntegrityError("INSERT message_citations", {}, Exception("FK violation"))
+            if isinstance(obj, MessageCitation) and obj.chunk_id in self._exploded:
+                raise RuntimeError("connection reset mid-persist")
 
     async def commit(self) -> None:
         return None
 
 
 def _install_mocks(
-    monkeypatch: pytest.MonkeyPatch, chunks: list[RetrievedChunk], answer: str
+    monkeypatch: pytest.MonkeyPatch,
+    chunks: list[RetrievedChunk],
+    answer: str,
+    deleted_chunk_ids: frozenset[UUID] = frozenset(),
+    exploded_chunk_ids: frozenset[UUID] = frozenset(),
 ) -> list[object]:
     added: list[object] = []
 
@@ -89,7 +125,11 @@ def _install_mocks(
     monkeypatch.setattr(chat, "hybrid_retrieve", fake_retrieve)
     monkeypatch.setattr(chat, "get_reranker", lambda: _FakeReranker())
     monkeypatch.setattr(chat, "stream_answer", fake_stream)
-    monkeypatch.setattr(chat, "get_session_factory", lambda: lambda: _FakeSession(added))
+    monkeypatch.setattr(
+        chat,
+        "get_session_factory",
+        lambda: lambda: _FakeSession(added, deleted_chunk_ids, exploded_chunk_ids),
+    )
     return added
 
 
@@ -132,6 +172,45 @@ def test_post_check_persists_only_used_valid_citations(monkeypatch: pytest.Monke
         (2, chunks[1].chunk_id),
         (1, chunks[0].chunk_id),
     }
+
+
+def test_deleted_chunk_citation_is_skipped_not_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
+    # a document re-ingested mid-answer deletes chunk [1] before the post-check
+    chunks = [_chunk(1), _chunk(2), _chunk(3)]
+    added = _install_mocks(
+        monkeypatch,
+        chunks,
+        "See [1] and [2].",
+        deleted_chunk_ids=frozenset({chunks[0].chunk_id}),
+    )
+
+    events = _run(_turn())
+
+    # the answer still lands: the assistant message persists and done fires (#19)
+    assert events[-1].event == "done"
+    assert any(isinstance(row, Message) and row.role == "assistant" for row in added)
+    # the vanished chunk's marker is dropped; the surviving citation persists
+    citations = [row for row in added if isinstance(row, MessageCitation)]
+    assert {(c.marker, c.chunk_id) for c in citations} == {(2, chunks[1].chunk_id)}
+
+
+def test_citation_persist_failure_still_completes_the_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # a non-IntegrityError fault (e.g. connection reset) while persisting citations
+    chunks = [_chunk(1), _chunk(2)]
+    added = _install_mocks(
+        monkeypatch,
+        chunks,
+        "See [1] and [2].",
+        exploded_chunk_ids=frozenset({chunks[0].chunk_id}),
+    )
+
+    events = _run(_turn())
+
+    # the streamed answer must not become an error: the turn still ends in done (#19)
+    assert events[-1].event == "done"
+    assert any(isinstance(row, Message) and row.role == "assistant" for row in added)
 
 
 def test_refusal_persists_no_citations(monkeypatch: pytest.MonkeyPatch) -> None:

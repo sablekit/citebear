@@ -174,9 +174,11 @@ browser ──(client upload, token from web app)──► Vercel Blob
   browser uploads directly to Vercel Blob after a token exchange with a
   Next.js route handler (`@vercel/blob` client uploads); the Python API
   receives only the blob URL and fetches the file from Blob.
-- **Parsing:** `pymupdf` for PDF (page numbers, headings via font-size
+- **Parsing:** `pdfplumber` for PDF (page numbers, headings via font-size
   heuristics), `python-docx` for DOCX (heading styles), plain parsing for
-  Markdown (heading levels). No OCR — image-only PDFs fail with a clear error.
+  Markdown (heading levels). `pdfplumber` (MIT) is chosen over `pymupdf`, whose
+  AGPL license would be a poor fit for an MIT project. No OCR — image-only PDFs
+  fail with a clear error.
 - **Chunking:** structure-first, not fixed-window. Split on heading boundaries,
   then recursively split oversized sections targeting **~400 tokens with
   ~15% overlap**, never crossing a heading boundary. Every chunk carries
@@ -279,8 +281,9 @@ documented in the README design notes.
 | POST | `/chat` | public | Ask a question; SSE stream (5.4) |
 | POST | `/feedback` | public | `{messageId, rating: 1\|-1}` |
 | GET | `/documents` | public | List ready documents (chat picker shows sources available) |
-| POST | `/admin/documents` | admin | Register an uploaded blob `{blobUrl, filename, title}`; returns doc id, starts ingestion |
-| DELETE | `/admin/documents/{id}` | admin | Delete document + chunks (cascade) |
+| POST | `/admin/documents` | admin | Register an uploaded blob `{blobUrl, filename, title}`; ingests synchronously, returns the document row |
+| GET | `/admin/documents` | admin | List documents in every status (drives the admin tab's status polling) |
+| DELETE | `/admin/documents/{id}` | admin | Delete document + chunks (cascade) + the Blob original |
 | GET | `/admin/questions` | admin | Paginated question log with feedback + grounded flag |
 | GET | `/admin/stats` | admin | Totals: questions, 👍/👎, refusal rate, docs |
 | GET | `/healthz` | public | Liveness + DB connectivity |
