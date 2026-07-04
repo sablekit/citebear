@@ -34,7 +34,7 @@ from citebear_api.events import (
     sources_event,
     token_event,
 )
-from citebear_api.generation import REFUSAL_TEXT, stream_answer
+from citebear_api.generation import REFUSAL_TEXT, is_refusal, stream_answer
 from citebear_api.models import Message, MessageCitation
 from citebear_api.problems import problem, problem_response
 from citebear_api.rate_limit import RATE_LIMIT_PER_HOUR, RateLimitState, check_chat_rate_limit
@@ -165,13 +165,15 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
                 parts.append(delta)
                 yield token_event(delta)
             answer = "".join(parts)
-            # grounded = the answer actually cites a retrieved source. The
-            # citation is structural proof it drew on the documents: a refusal —
-            # the exact template or any paraphrase — cites nothing (#33), and a
-            # cited answer that happens to open with the refusal wording is still
-            # grounded (#59). This replaces the is_refusal string-prefix
-            # heuristic, which mislabeled both cases.
-            grounded = bool(cited_markers(answer, len(chunks)))
+            # grounded = a real answer, not a refusal. A citation is structural
+            # proof the answer drew on the sources, so a cited answer is grounded
+            # whatever its wording — including the #59 derail that opens with the
+            # refusal template. An answer with no marker (the model sometimes
+            # omits them) is still grounded unless it *is* the refusal template;
+            # is_refusal is the belt-and-suspenders check for that uncited case
+            # (#33). This avoids mislabeling an uncited-but-real answer as a
+            # refusal in the log and stats.
+            grounded = bool(cited_markers(answer, len(chunks))) or not is_refusal(answer)
         else:
             # nothing cleared the threshold: refuse without calling the generator
             # (SPEC §5.3). No chunk is trustworthy enough to cite.

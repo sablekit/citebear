@@ -245,14 +245,25 @@ def test_cited_answer_is_grounded_despite_refusal_wording(
     ]
 
 
-def test_paraphrased_refusal_without_citation_is_not_grounded(
+def test_uncited_real_answer_is_grounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    # the model answers from the sources but omits the [n] marker (it happens).
+    # This is a real answer, not a refusal, so it must not be logged/counted as
+    # one — grounded stays true because it isn't the refusal template (#33).
+    chunks = [_chunk(1)]
+    _install_mocks(monkeypatch, chunks, "The maximum batch size is 512.")
+
+    events = _run(_turn())
+
+    assert events[-1].data["grounded"] is True
+
+
+def test_template_refusal_from_generator_is_not_grounded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # a refusal the model paraphrased away from the exact template, citing
-    # nothing: is_refusal's prefix check would miss it and store grounded=true;
-    # the structural rule marks it ungrounded because it cites no source (#33).
+    # retrieval cleared the threshold but the model still emitted the refusal
+    # template: no citation and it IS the refusal string, so grounded=false.
     chunks = [_chunk(1)]
-    _install_mocks(monkeypatch, chunks, "The provided documents do not cover that topic.")
+    _install_mocks(monkeypatch, chunks, "I don't know based on the provided documents.")
 
     events = _run(_turn())
 
