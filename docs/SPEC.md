@@ -145,6 +145,13 @@ feedback (
   rating        smallint NOT NULL,        -- +1 | -1
   created_at    timestamptz NOT NULL
 )
+
+admin_login_attempts (
+  id            uuid PK,
+  ip_hash       text NOT NULL,            -- failed admin logins, per IP, to throttle brute force
+  created_at    timestamptz NOT NULL
+)
+-- index: (ip_hash, created_at)
 ```
 
 Embedding dimension is fixed at 1536 in v1 (works for `openai/text-embedding-3-small`
@@ -282,6 +289,7 @@ documented in the README design notes.
 |---|---|---|---|
 | POST | `/chat` | public | Ask a question; SSE stream (5.4) |
 | POST | `/feedback` | public | `{messageId, rating: 1\|-1}` |
+| POST | `/admin/login` | public | Verify the admin password; throttles failed attempts per IP |
 | GET | `/documents` | public | List ready documents (chat picker shows sources available) |
 | POST | `/admin/documents` | admin | Register an uploaded blob `{blobUrl, filename, title}`; ingests synchronously, returns the document row |
 | GET | `/admin/documents` | admin | List documents in every status (drives the admin tab's status polling) |
@@ -306,11 +314,17 @@ documented in the README design notes.
   effectively private.
 - **Admin auth:** `Authorization: Bearer <ADMIN_PASSWORD>` checked by a FastAPI
   dependency. The web admin page stores the password in an httpOnly cookie via
-  a Next.js route handler; the browser never calls the Python API directly.
+  a Next.js route handler; the browser never calls the Python API directly. The
+  login route delegates the password check to `POST /admin/login`, which
+  throttles failed attempts per IP (a Postgres count over
+  `admin_login_attempts`) so the gate can't be brute-forced.
 - **Rate limit (public instance):** 20 chat requests / hour / IP, enforced in the
   API. Refusals still count. Counter state lives in Postgres — a count over
   `messages(ip_hash, created_at)` — because in-memory counters are useless
-  across serverless instances; no Redis in v1.
+  across serverless instances; no Redis in v1. Client IPs are hashed with a
+  dedicated `IP_HASH_SECRET` and only trusted from the proxy's `X-Client-IP`
+  after the internal key validates; the web proxy derives that IP from the
+  Vercel edge hop, not a spoofable `X-Forwarded-For`.
 
 ## 7. Web app (Next.js)
 

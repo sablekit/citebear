@@ -4,8 +4,6 @@ Event sequence: sources -> token* -> done (or error). The sources event is sent
 before the first token so the UI can render citation chips immediately.
 """
 
-import hashlib
-import hmac
 import json
 import logging
 import time
@@ -24,6 +22,7 @@ from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from citebear_api.auth import require_internal_key
 from citebear_api.citations import build_citations, cited_markers
+from citebear_api.client_ip import hash_ip
 from citebear_api.condense import condense_question
 from citebear_api.confidence import LOW, assess
 from citebear_api.config import get_settings
@@ -65,16 +64,6 @@ class ChatTurn:
 
 ChatStream = Callable[[ChatTurn], AsyncIterator[ChatEvent]]
 RateLimiter = Callable[[str], Awaitable[RateLimitState]]
-
-
-def hash_ip(ip: str) -> str:
-    """Keyed hash: rate-limit counting works, raw IPs are not recoverable.
-
-    Keyed with a dedicated IP_HASH_SECRET, not the web->api key, so the two
-    rotate independently and neither leaks the other (#9).
-    """
-    key = get_settings().ip_hash_secret.encode()
-    return hmac.new(key, ip.encode(), hashlib.sha256).hexdigest()
 
 
 async def persist_citations(

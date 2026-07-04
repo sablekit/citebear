@@ -26,17 +26,21 @@ def require_internal_key(x_internal_key: Annotated[str | None, Header()] = None)
         raise HTTPException(status_code=401, detail="Missing or invalid internal API key")
 
 
+def verify_admin_password(candidate: str) -> bool:
+    """Constant-time check of a candidate against the admin password."""
+    return hmac.compare_digest(candidate.encode(), get_settings().admin_password.encode())
+
+
 def require_admin(authorization: Annotated[str | None, Header()] = None) -> None:
     """Reject requests without a valid admin bearer token.
 
     A single 401 covers both a missing and a wrong credential — leaking which
     one it is only helps a guesser. The compare is constant-time.
     """
-    expected = get_settings().admin_password
     token = (
         authorization[len(_BEARER_PREFIX) :]
         if authorization and authorization.startswith(_BEARER_PREFIX)
         else ""
     )
-    if not hmac.compare_digest(token.encode(), expected.encode()):
+    if not verify_admin_password(token):
         raise HTTPException(status_code=401, detail="Missing or invalid admin credentials")

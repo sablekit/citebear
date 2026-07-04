@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from citebear_api.admin_login import router as admin_login_router
 from citebear_api.chat import router as chat_router
 from citebear_api.config import get_settings
 from citebear_api.db import get_session
@@ -25,6 +26,7 @@ install_problem_handlers(app)
 app.include_router(chat_router)
 app.include_router(documents_router)
 app.include_router(feedback_router)
+app.include_router(admin_login_router)
 
 
 @app.get("/healthz")

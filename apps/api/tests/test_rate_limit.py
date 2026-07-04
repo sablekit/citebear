@@ -7,11 +7,15 @@ workflow DB; here we pin the allow/deny + retry-after arithmetic.
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+from citebear_api.models import AdminLoginAttempt
 from citebear_api.rate_limit import (
+    ADMIN_LOGIN_LIMIT,
     RATE_LIMIT_PER_HOUR,
     RATE_WINDOW,
     RateLimitState,
+    check_admin_login_rate_limit,
     check_chat_rate_limit,
+    record_admin_login_failure,
 )
 
 
@@ -24,8 +28,9 @@ class _FakeResult:
 
 
 class _FakeSession:
-    def __init__(self, row: tuple[int, datetime | None]) -> None:
+    def __init__(self, row: tuple[int, datetime | None], added: list[object]) -> None:
         self._row = row
+        self._added = added
 
     async def __aenter__(self) -> "_FakeSession":
         return self
@@ -36,9 +41,15 @@ class _FakeSession:
     async def execute(self, *_: object, **__: object) -> _FakeResult:
         return _FakeResult(self._row)
 
+    def add(self, obj: object) -> None:
+        self._added.append(obj)
 
-def _factory(row: tuple[int, datetime | None]) -> object:
-    return lambda: _FakeSession(row)
+    async def commit(self) -> None:
+        return None
+
+
+def _factory(row: tuple[int, datetime | None], added: list[object] | None = None) -> object:
+    return lambda: _FakeSession(row, added if added is not None else [])
 
 
 def _check(row: tuple[int, datetime | None]) -> RateLimitState:
@@ -72,3 +83,28 @@ def test_retry_after_is_at_least_one_second() -> None:
     state = _check((RATE_LIMIT_PER_HOUR, oldest))
     assert state.allowed is False
     assert state.retry_after >= 1
+
+
+def test_admin_login_limiter_denies_at_its_own_threshold() -> None:
+    # under the (separate, smaller) admin-login cap → allowed
+    under = asyncio.run(
+        check_admin_login_rate_limit(_factory((ADMIN_LOGIN_LIMIT - 1, datetime.now(UTC))), "ip")  # type: ignore[arg-type]
+    )
+    assert under.allowed is True
+    # at the cap → denied
+    over = asyncio.run(
+        check_admin_login_rate_limit(
+            _factory((ADMIN_LOGIN_LIMIT, datetime.now(UTC) - timedelta(minutes=1))),
+            "ip",  # type: ignore[arg-type]
+        )
+    )
+    assert over.allowed is False
+
+
+def test_record_admin_login_failure_inserts_one_row() -> None:
+    added: list[object] = []
+    asyncio.run(record_admin_login_failure(_factory((0, None), added), "ip-hash"))  # type: ignore[arg-type]
+    assert len(added) == 1
+    attempt = added[0]
+    assert isinstance(attempt, AdminLoginAttempt)
+    assert attempt.ip_hash == "ip-hash"

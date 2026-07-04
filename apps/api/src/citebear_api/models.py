@@ -122,3 +122,21 @@ class Feedback(Base):
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=text("now()")
     )
+
+
+class AdminLoginAttempt(Base):
+    __tablename__ = "admin_login_attempts"
+
+    # one row per failed admin login, counted per ip_hash to throttle brute
+    # force (SPEC §6). Successful logins are not recorded.
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    ip_hash: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=text("now()")
+    )
+
+    __table_args__ = (
+        Index("idx_admin_login_attempts_ip_hash_created_at", "ip_hash", "created_at"),
+    )
