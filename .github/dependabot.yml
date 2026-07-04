@@ -11,6 +11,13 @@ updates:
       npm-major:
         patterns: ["*"]
         update-types: ["major"]
+    ignore:
+      # eslint-plugin-react 7.37.x crashes on ESLint 10's context API
+      # (contextOrFilename.getFilename is not a function). Hold the major
+      # until the plugin ships an ESLint 10-compatible release, then drop
+      # this entry and migrate deliberately.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "uv"
     directory: "/apps/api"
     schedule:
