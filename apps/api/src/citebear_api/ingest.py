@@ -34,8 +34,8 @@ from citebear_api.parsing import (
 
 logger = logging.getLogger(__name__)
 
-MAX_DOCUMENT_BYTES = 20 * 1024 * 1024  # 20 MB (SPEC §5.1)
-MAX_PAGES = 300
+MAX_DOCUMENT_BYTES = 20 * 1024 * 1024  # 20 MB upload cap (SPEC §5.1)
+MAX_PAGES = 300  # upload page cap
 
 
 class IngestionError(ValueError):
@@ -50,6 +50,8 @@ async def ingest_document(
     mime_type: str,
     source_url: str,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
+    max_bytes: int | None = MAX_DOCUMENT_BYTES,
+    max_pages: int | None = MAX_PAGES,
 ) -> tuple[uuid.UUID, int]:
     """Ingest one document's bytes; returns (document id, chunk count).
 
@@ -62,18 +64,22 @@ async def ingest_document(
     Re-ingesting a file with the same filename replaces the previous document
     only in the same transaction that marks the new one ready, so the old
     version keeps serving if embedding fails partway.
+
+    `max_bytes`/`max_pages` bound untrusted uploads (SPEC §5.1). The trusted CLI
+    path passes None to lift them for the large preloaded library, which we
+    ingest ourselves and vet by hand.
     """
-    if len(data) > MAX_DOCUMENT_BYTES:
-        raise IngestionError(f"Document exceeds the {MAX_DOCUMENT_BYTES // (1024 * 1024)} MB limit")
+    if max_bytes is not None and len(data) > max_bytes:
+        raise IngestionError(f"Document exceeds the {max_bytes // (1024 * 1024)} MB limit")
 
     try:
         # cap pages during parse so an oversized PDF is rejected before it is
         # fully laid out into memory, not after
-        sections, page_count = parse_document(data, mime_type, max_pages=MAX_PAGES)
+        sections, page_count = parse_document(data, mime_type, max_pages=max_pages)
     except (UnsupportedMediaTypeError, IngestionError):
         raise
     except PageLimitError as exc:
-        raise IngestionError(f"Document exceeds the {MAX_PAGES}-page limit") from exc
+        raise IngestionError(f"Document exceeds the {max_pages}-page limit") from exc
     except Exception as exc:
         # a mislabeled or corrupt file (bytes that don't match the extension)
         # reaches the parser here; surface it as a clean rejection, not a 500
@@ -180,13 +186,18 @@ async def ingest_from_blob(
 async def ingest_local_file(path: Path, title: str, source_url: str) -> tuple[uuid.UUID, int]:
     """Ingest one local file — the self-owned corpus, the golden set, and the
     preloaded library all load this way. The parser mime is resolved from the
-    filename extension (PDF/DOCX/Markdown); anything else is rejected."""
+    filename extension (PDF/DOCX/Markdown); anything else is rejected.
+
+    This is a trusted path (we choose the files), so the upload size/page caps
+    are lifted — the preloaded library's manuals run past both."""
     return await ingest_document(
         data=path.read_bytes(),
         filename=path.name,
         title=title,
         mime_type=mime_from_filename(path.name),
         source_url=source_url,
+        max_bytes=None,
+        max_pages=None,
     )
 
 
