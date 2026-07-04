@@ -18,6 +18,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from citebear_api.citations import build_citations, cited_markers
@@ -36,7 +38,7 @@ from citebear_api.generation import REFUSAL_TEXT, is_refusal, stream_answer
 from citebear_api.models import Message, MessageCitation
 from citebear_api.problems import problem
 from citebear_api.rerank import RerankUnavailable, get_reranker
-from citebear_api.retrieval import FINAL_TOP_K, embed_query, hybrid_retrieve
+from citebear_api.retrieval import FINAL_TOP_K, RetrievedChunk, embed_query, hybrid_retrieve
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,42 @@ def hash_ip(ip: str) -> str:
     """Keyed hash: rate-limit counting works, raw IPs are not recoverable."""
     key = get_settings().internal_api_key.encode()
     return hmac.new(key, ip.encode(), hashlib.sha256).hexdigest()
+
+
+async def persist_citations(
+    session_factory: async_sessionmaker[AsyncSession],
+    message_id: uuid.UUID,
+    answer: str,
+    chunks: list[RetrievedChunk],
+) -> None:
+    """Persist the answer's valid citation markers, each in its own savepoint.
+
+    A cited chunk can be deleted between retrieval and now once documents can be
+    removed (#7 delete/re-ingest lands in M4). The savepoint isolates that
+    chunk's FK violation to its own marker — the other citations still commit,
+    and the already-committed assistant message is never touched.
+    """
+    async with session_factory() as db:
+        for marker in cited_markers(answer, len(chunks)):
+            chunk = chunks[marker - 1]
+            try:
+                async with db.begin_nested():
+                    db.add(
+                        MessageCitation(
+                            message_id=message_id,
+                            marker=marker,
+                            chunk_id=chunk.chunk_id,
+                            score=chunk.score,
+                        )
+                    )
+                    await db.flush()
+            except IntegrityError:
+                logger.warning(
+                    "cited chunk %s vanished before persistence; skipping marker %s",
+                    chunk.chunk_id,
+                    marker,
+                )
+        await db.commit()
 
 
 async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
@@ -142,6 +180,8 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
             yield token_event(answer)
             grounded = False
 
+        # persist the assistant message first, in its own transaction, so a
+        # citation FK failure can never discard an answer the user already saw
         async with session_factory() as db:
             assistant_message = Message(
                 session_id=turn.session_id,
@@ -155,19 +195,10 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
             db.add(assistant_message)
             await db.flush()
             message_id = assistant_message.id
-            # post-check: persist only the citations the answer actually used and
-            # that map to a real chunk (SPEC §5.3)
-            for marker in cited_markers(answer, len(chunks)):
-                chunk = chunks[marker - 1]
-                db.add(
-                    MessageCitation(
-                        message_id=message_id,
-                        marker=marker,
-                        chunk_id=chunk.chunk_id,
-                        score=chunk.score,
-                    )
-                )
             await db.commit()
+
+        # post-check: persist only the citations the answer actually used (SPEC §5.3)
+        await persist_citations(session_factory, message_id, answer, chunks)
 
         yield done_event(message_id, grounded)
     except Exception:
