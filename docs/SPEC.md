@@ -174,9 +174,11 @@ browser ──(client upload, token from web app)──► Vercel Blob
   browser uploads directly to Vercel Blob after a token exchange with a
   Next.js route handler (`@vercel/blob` client uploads); the Python API
   receives only the blob URL and fetches the file from Blob.
-- **Parsing:** `pymupdf` for PDF (page numbers, headings via font-size
+- **Parsing:** `pdfplumber` for PDF (page numbers, headings via font-size
   heuristics), `python-docx` for DOCX (heading styles), plain parsing for
-  Markdown (heading levels). No OCR — image-only PDFs fail with a clear error.
+  Markdown (heading levels). `pdfplumber` (MIT) is chosen over `pymupdf`, whose
+  AGPL license would be a poor fit for an MIT project. No OCR — image-only PDFs
+  fail with a clear error.
 - **Chunking:** structure-first, not fixed-window. Split on heading boundaries,
   then recursively split oversized sections targeting **~400 tokens with
   ~15% overlap**, never crossing a heading boundary. Every chunk carries
