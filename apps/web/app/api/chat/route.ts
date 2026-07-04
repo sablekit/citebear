@@ -87,12 +87,24 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   if (!upstream.ok || !upstream.body) {
-    return new Response(await upstream.text(), {
-      status: upstream.status,
-      headers: {
-        "Content-Type": upstream.headers.get("content-type") ?? "application/problem+json",
+    // Surface the API's Problem detail (rate-limit 429, upstream 5xx, …) as an
+    // error the chat UI already renders, instead of a bare non-200 the SDK turns
+    // into a generic "failed to fetch".
+    let detail = "The answer service failed. Please retry.";
+    try {
+      const problem = JSON.parse(await upstream.text()) as { detail?: string; title?: string };
+      detail = problem.detail ?? problem.title ?? detail;
+    } catch {
+      // non-JSON body: keep the fallback message
+    }
+    const errorStream = createUIMessageStream<CitebearUIMessage>({
+      execute: ({ writer }) => {
+        writer.write({ type: "start" });
+        writer.write({ type: "error", errorText: detail });
+        writer.write({ type: "finish" });
       },
     });
+    return createUIMessageStreamResponse({ stream: errorStream });
   }
 
   const upstreamBody = upstream.body;
