@@ -68,3 +68,10 @@ def test_strip_markers_preserves_newlines_and_non_marker_brackets() -> None:
     assert strip_markers("Line one [1]\nLine two [2]") == "Line one\nLine two"
     # only bracketed integers are markers; other brackets are left untouched
     assert strip_markers("An array a[i] and a range [a, b].") == "An array a[i] and a range [a, b]."
+
+
+def test_strip_markers_leaves_non_citation_bracketed_numbers() -> None:
+    # code-ish index glued to a word, a 4-digit year, and [0] are not markers
+    assert strip_markers("Set retries[3] to zero.") == "Set retries[3] to zero."
+    assert strip_markers("The [2024] report is cited [1].") == "The [2024] report is cited."
+    assert strip_markers("Item [0] is the header [2].") == "Item [0] is the header."

@@ -16,9 +16,13 @@ from citebear_api.events import Citation
 from citebear_api.retrieval import RetrievedChunk
 
 _MARKER = re.compile(r"\[(\d+)\]")
-# markers plus any inline whitespace that precedes them, so stripping leaves no
-# "word ." gaps (newlines are preserved — only spaces/tabs are swallowed)
-_MARKER_RUN = re.compile(r"[ \t]*\[\d+\]")
+# A citation marker as it appears in prose, plus the inline whitespace before it
+# (so stripping leaves no "word ." gap; newlines are preserved). Kept narrow so
+# non-citation brackets in a replayed answer survive: 1-2 digits only (real
+# markers are 1..top-k, never a year like [2024]); [0] excluded (markers are
+# 1-based); and a preceding word char is rejected so code-ish `arr[3]` is left
+# alone, while a spaced ` [3]` or a run `[1][2]` is stripped.
+_MARKER_RUN = re.compile(r"[ \t]*(?<!\w)\[[1-9]\d?\]")
 
 
 def strip_markers(text: str) -> str:
