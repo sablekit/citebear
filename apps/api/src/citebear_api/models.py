@@ -7,11 +7,12 @@ gen_random_uuid() primary keys. Migrations live in migrations/.
 import uuid
 from datetime import datetime
 
-from pgvector.sqlalchemy import Vector  # pyright: ignore[reportMissingTypeStubs]
 from sqlalchemy import Computed, ForeignKey, Index, text
 from sqlalchemy.dialects.postgresql import ARRAY, REAL, TIMESTAMP, TSVECTOR, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import Boolean, Integer, Text
+
+from citebear_api.vector import Vector
 
 EMBEDDING_DIM = 1536  # text-embedding-3-small; changing models requires re-ingestion
 

@@ -10,8 +10,9 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects.postgresql import ARRAY, TIMESTAMP, TSVECTOR, UUID
+
+from citebear_api.vector import Vector
 
 revision: str = "0001"
 down_revision: str | None = None
