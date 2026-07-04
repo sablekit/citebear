@@ -8,6 +8,14 @@ Redis in v1). Two limiters share the shape:
   count, since every request writes a user row before it's answered);
 - admin login: failed attempts / IP, counted over admin_login_attempts, to
   throttle brute force (#56).
+
+Both limiters are check-then-act: they count already-committed rows, and the
+admitted request's own row commits slightly later. A burst of concurrent
+requests from one IP can therefore each read a stale count and slip past the
+cap. This bounds the *sequential* rate (the common case) but not a concurrent
+burst; airtight per-IP bounding (insert-before-count in one transaction, or a
+pg advisory lock) is deferred — the residual exposure is capped by the AI
+Gateway's prepaid credit for chat and by a strong admin password for login.
 """
 
 import math
