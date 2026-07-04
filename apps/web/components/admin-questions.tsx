@@ -73,6 +73,10 @@ export function AdminQuestions() {
     return <p className="text-sm text-zinc-500 dark:text-zinc-400">No questions yet.</p>;
   }
 
+  // page reflects the last loaded offset; while a newer offset is fetching, the
+  // pager is out of sync, so gate the buttons and base the range on the loaded
+  // page — otherwise a stale page enables Next past the last page.
+  const inFlight = offset !== page.offset;
   const start = page.offset + 1;
   const end = page.offset + page.entries.length;
 
@@ -132,16 +136,16 @@ export function AdminQuestions() {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-            disabled={page.offset === 0}
+            onClick={() => setOffset(Math.max(0, page.offset - PAGE_SIZE))}
+            disabled={page.offset === 0 || inFlight}
             className="rounded-md border border-zinc-300 px-3 py-1 transition-colors hover:border-zinc-500 disabled:opacity-40 dark:border-zinc-700 dark:hover:border-zinc-400"
           >
             Previous
           </button>
           <button
             type="button"
-            onClick={() => setOffset(offset + PAGE_SIZE)}
-            disabled={end >= page.total}
+            onClick={() => setOffset(page.offset + PAGE_SIZE)}
+            disabled={end >= page.total || inFlight}
             className="rounded-md border border-zinc-300 px-3 py-1 transition-colors hover:border-zinc-500 disabled:opacity-40 dark:border-zinc-700 dark:hover:border-zinc-400"
           >
             Next
