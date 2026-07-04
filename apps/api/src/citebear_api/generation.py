@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
+from citebear_api.citations import strip_markers
 from citebear_api.gateway import get_chat_model
 from citebear_api.retrieval import RetrievedChunk
 
@@ -53,7 +54,11 @@ def build_messages(
     """history: (role, content) pairs, oldest first, roles 'user' | 'assistant'."""
     messages: list[BaseMessage] = [SystemMessage(SYSTEM_PROMPT)]
     for role, content in history:
-        messages.append(HumanMessage(content) if role == "user" else AIMessage(content))
+        # strip prior-turn citation markers so they can't alias this turn's
+        # excerpt numbering and derail the generator (#59)
+        messages.append(
+            HumanMessage(content) if role == "user" else AIMessage(strip_markers(content))
+        )
     messages.append(
         HumanMessage(f"Source excerpts:\n\n{build_context(chunks)}\n\nQuestion: {question}")
     )

@@ -16,6 +16,21 @@ from citebear_api.events import Citation
 from citebear_api.retrieval import RetrievedChunk
 
 _MARKER = re.compile(r"\[(\d+)\]")
+# markers plus any inline whitespace that precedes them, so stripping leaves no
+# "word ." gaps (newlines are preserved — only spaces/tabs are swallowed)
+_MARKER_RUN = re.compile(r"[ \t]*\[\d+\]")
+
+
+def strip_markers(text: str) -> str:
+    """Remove citation markers from text.
+
+    A prior assistant turn is replayed to the generator as conversational
+    context, but its `[n]` markers number *that* turn's excerpts. Left in, they
+    alias the current turn's excerpt numbering, and the model re-audits the stale
+    citation instead of answering — the #59 derail. History carries the prose,
+    not the markers.
+    """
+    return _MARKER_RUN.sub("", text)
 
 
 def build_citations(chunks: list[RetrievedChunk]) -> list[Citation]:

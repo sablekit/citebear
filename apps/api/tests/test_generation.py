@@ -59,6 +59,19 @@ def test_messages_order_history_then_question() -> None:
     assert "Question: What is RRF?" in final.text
 
 
+def test_history_assistant_markers_are_stripped() -> None:
+    # the prior turn cited [1]; it must not survive into the prompt where it
+    # would alias this turn's excerpt numbering (#59)
+    messages = build_messages(
+        "What is the batch size?",
+        [_chunk()],
+        history=[("user", "Codename?"), ("assistant", "It is Marmalade-42 [1].")],
+    )
+    assert isinstance(messages[2], AIMessage)
+    assert messages[2].text == "It is Marmalade-42."
+    assert "[1]" not in messages[2].text
+
+
 def test_refusal_detection() -> None:
     assert is_refusal(REFUSAL_TEXT)
     assert is_refusal("  I don't know based on the provided documents. ")
