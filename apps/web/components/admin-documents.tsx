@@ -3,6 +3,8 @@
 import { upload } from "@vercel/blob/client";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { CONTENT_TYPE_BY_EXTENSION } from "@/lib/document-types";
+
 /** Documents tab (SPEC §7): drag-drop upload straight to Blob, then register
  * with the api; a status-polled list with delete. */
 
@@ -19,12 +21,11 @@ interface AdminDocument {
 }
 
 const POLL_MS = 3000; // reflect processing -> ready/failed across reloads
-const CONTENT_TYPE_BY_EXT: Record<string, string> = {
-  pdf: "application/pdf",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  md: "text/markdown",
-  markdown: "text/markdown",
-};
+
+async function fetchDocuments(): Promise<AdminDocument[] | null> {
+  const response = await fetch("/api/admin/documents", { cache: "no-store" });
+  return response.ok ? ((await response.json()) as AdminDocument[]) : null;
+}
 
 function titleFromFilename(filename: string): string {
   return filename.replace(/\.[^.]+$/, "") || filename;
@@ -44,23 +45,32 @@ export function AdminDocuments() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
-    const response = await fetch("/api/admin/documents", { cache: "no-store" });
-    if (response.ok) setDocuments((await response.json()) as AdminDocument[]);
+    const docs = await fetchDocuments();
+    if (docs) setDocuments(docs);
   }, []);
 
+  // initial load
   useEffect(() => {
     let active = true;
-    const poll = async () => {
-      const response = await fetch("/api/admin/documents", { cache: "no-store" });
-      if (active && response.ok) setDocuments((await response.json()) as AdminDocument[]);
-    };
-    void poll();
-    const timer = setInterval(() => void poll(), POLL_MS);
+    void (async () => {
+      const docs = await fetchDocuments();
+      if (active && docs) setDocuments(docs);
+    })();
     return () => {
       active = false;
-      clearInterval(timer);
     };
   }, []);
+
+  // poll only while something is still processing, and only when the tab is
+  // visible — a settled list in a backgrounded tab must not keep hitting the API
+  const hasProcessing = documents.some((document) => document.status === "processing");
+  useEffect(() => {
+    if (!hasProcessing) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") void refresh();
+    }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [hasProcessing, refresh]);
 
   const ingest = useCallback(
     async (files: File[]) => {
@@ -69,7 +79,7 @@ export function AdminDocuments() {
       try {
         for (const file of files) {
           const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-          const contentType = CONTENT_TYPE_BY_EXT[ext];
+          const contentType = CONTENT_TYPE_BY_EXTENSION[ext];
           if (!contentType) {
             setError(`Unsupported file type: ${file.name} (PDF, DOCX, or Markdown only)`);
             continue;
@@ -94,12 +104,12 @@ export function AdminDocuments() {
             const problem = (await response.json().catch(() => null)) as { detail?: string } | null;
             setError(problem?.detail ?? `Could not ingest ${file.name}.`);
           }
-          await refresh();
         }
       } catch {
         setError("Upload failed. Please try again.");
       } finally {
         setBusy(false);
+        await refresh(); // one refresh after the batch; the poll takes over if anything is still processing
       }
     },
     [refresh],
