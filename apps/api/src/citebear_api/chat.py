@@ -83,28 +83,36 @@ async def persist_citations(
     removed (#7 delete/re-ingest lands in M4). The savepoint isolates that
     chunk's FK violation to its own marker — the other citations still commit,
     and the already-committed assistant message is never touched.
+
+    Citations are entirely best-effort: the assistant message is already
+    committed and streamed, so no failure here (a vanished chunk, or a fault at
+    commit) may turn a delivered answer into an error — the turn still ends in
+    `done` (#19). Failures are logged and dropped.
     """
-    async with session_factory() as db:
-        for marker in cited_markers(answer, len(chunks)):
-            chunk = chunks[marker - 1]
-            try:
-                async with db.begin_nested():
-                    db.add(
-                        MessageCitation(
-                            message_id=message_id,
-                            marker=marker,
-                            chunk_id=chunk.chunk_id,
-                            score=chunk.score,
+    try:
+        async with session_factory() as db:
+            for marker in cited_markers(answer, len(chunks)):
+                chunk = chunks[marker - 1]
+                try:
+                    async with db.begin_nested():
+                        db.add(
+                            MessageCitation(
+                                message_id=message_id,
+                                marker=marker,
+                                chunk_id=chunk.chunk_id,
+                                score=chunk.score,
+                            )
                         )
+                        await db.flush()
+                except IntegrityError:
+                    logger.warning(
+                        "cited chunk %s vanished before persistence; skipping marker %s",
+                        chunk.chunk_id,
+                        marker,
                     )
-                    await db.flush()
-            except IntegrityError:
-                logger.warning(
-                    "cited chunk %s vanished before persistence; skipping marker %s",
-                    chunk.chunk_id,
-                    marker,
-                )
-        await db.commit()
+            await db.commit()
+    except Exception:
+        logger.warning("failed to persist citations for message %s", message_id)
 
 
 async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:

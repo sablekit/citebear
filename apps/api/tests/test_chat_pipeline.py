@@ -58,9 +58,15 @@ class _FakeSavepoint:
 class _FakeSession:
     """Minimal async session: records added rows, assigns ids on flush."""
 
-    def __init__(self, added: list[object], deleted: frozenset[UUID] = frozenset()) -> None:
+    def __init__(
+        self,
+        added: list[object],
+        deleted: frozenset[UUID] = frozenset(),
+        exploded: frozenset[UUID] = frozenset(),
+    ) -> None:
         self.added = added
         self._deleted = deleted  # chunk ids that FK-fail on insert (deleted mid-turn)
+        self._exploded = exploded  # chunk ids that raise a non-IntegrityError on insert
 
     async def __aenter__(self) -> "_FakeSession":
         return self
@@ -85,6 +91,8 @@ class _FakeSession:
                 obj.id = uuid4()
             if isinstance(obj, MessageCitation) and obj.chunk_id in self._deleted:
                 raise IntegrityError("INSERT message_citations", {}, Exception("FK violation"))
+            if isinstance(obj, MessageCitation) and obj.chunk_id in self._exploded:
+                raise RuntimeError("connection reset mid-persist")
 
     async def commit(self) -> None:
         return None
@@ -95,6 +103,7 @@ def _install_mocks(
     chunks: list[RetrievedChunk],
     answer: str,
     deleted_chunk_ids: frozenset[UUID] = frozenset(),
+    exploded_chunk_ids: frozenset[UUID] = frozenset(),
 ) -> list[object]:
     added: list[object] = []
 
@@ -117,7 +126,9 @@ def _install_mocks(
     monkeypatch.setattr(chat, "get_reranker", lambda: _FakeReranker())
     monkeypatch.setattr(chat, "stream_answer", fake_stream)
     monkeypatch.setattr(
-        chat, "get_session_factory", lambda: lambda: _FakeSession(added, deleted_chunk_ids)
+        chat,
+        "get_session_factory",
+        lambda: lambda: _FakeSession(added, deleted_chunk_ids, exploded_chunk_ids),
     )
     return added
 
@@ -181,6 +192,25 @@ def test_deleted_chunk_citation_is_skipped_not_fatal(monkeypatch: pytest.MonkeyP
     # the vanished chunk's marker is dropped; the surviving citation persists
     citations = [row for row in added if isinstance(row, MessageCitation)]
     assert {(c.marker, c.chunk_id) for c in citations} == {(2, chunks[1].chunk_id)}
+
+
+def test_citation_persist_failure_still_completes_the_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # a non-IntegrityError fault (e.g. connection reset) while persisting citations
+    chunks = [_chunk(1), _chunk(2)]
+    added = _install_mocks(
+        monkeypatch,
+        chunks,
+        "See [1] and [2].",
+        exploded_chunk_ids=frozenset({chunks[0].chunk_id}),
+    )
+
+    events = _run(_turn())
+
+    # the streamed answer must not become an error: the turn still ends in done (#19)
+    assert events[-1].event == "done"
+    assert any(isinstance(row, Message) and row.role == "assistant" for row in added)
 
 
 def test_refusal_persists_no_citations(monkeypatch: pytest.MonkeyPatch) -> None:
