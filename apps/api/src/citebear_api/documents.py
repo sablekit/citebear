@@ -105,7 +105,13 @@ async def register_document(body: RegisterDocumentRequest) -> AdminDocumentOut:
 
     async with get_session_factory()() as session:
         document = await session.get(Document, document_id)
-        assert document is not None  # just committed as ready
+        if document is None:
+            # a concurrent re-ingest of the same filename removed it between the
+            # commit and this read; report it rather than crash on a bare assert
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The document was replaced concurrently; please retry.",
+            )
         return AdminDocumentOut.model_validate(document)
 
 

@@ -138,9 +138,12 @@ def _docx_heading_level(style_name: str | None) -> int | None:
         return 1
     if style_name.startswith("Heading "):
         try:
-            return min(int(style_name.removeprefix("Heading ")), MAX_HEADING_LEVEL)
+            level = int(style_name.removeprefix("Heading "))
         except ValueError:
             return None
+        # clamp both ends: a "Heading 0" style would otherwise yield level 0,
+        # producing an empty "#" * 0 marker and a malformed heading trail
+        return min(max(level, 1), MAX_HEADING_LEVEL)
     return None
 
 

@@ -9,8 +9,13 @@ import asyncio
 
 import pytest
 
-from citebear_api.ingest import MAX_DOCUMENT_BYTES, IngestionError, ingest_document
-from citebear_api.parsing import MARKDOWN_MIME, UnsupportedMediaTypeError
+from citebear_api.ingest import (
+    MAX_DOCUMENT_BYTES,
+    IngestionError,
+    ingest_document,
+    ingest_from_blob,
+)
+from citebear_api.parsing import MARKDOWN_MIME, PDF_MIME, UnsupportedMediaTypeError
 
 
 def _ingest(data: bytes, mime_type: str) -> None:
@@ -38,3 +43,23 @@ def test_unsupported_mime_is_rejected() -> None:
 def test_document_with_no_extractable_text_is_rejected() -> None:
     with pytest.raises(IngestionError, match="No extractable text"):
         _ingest(b"   \n\n   ", MARKDOWN_MIME)
+
+
+def test_corrupt_file_is_rejected_cleanly_not_as_a_crash() -> None:
+    # bytes that don't match the declared type reach the parser; it must become a
+    # clean IngestionError (-> 422), never an unhandled 500
+    with pytest.raises(IngestionError, match="could not be parsed"):
+        _ingest(b"this is plainly not a PDF", PDF_MIME)
+
+
+def test_ingest_from_blob_rejects_non_blob_urls() -> None:
+    # the blobUrl comes from the admin body; a non-Blob URL must not be fetched (SSRF)
+    with pytest.raises(IngestionError, match="Vercel Blob URL"):
+        asyncio.run(
+            ingest_from_blob(
+                blob_url="http://169.254.169.254/latest/meta-data/",
+                filename="x.md",
+                title="x",
+                mime_type=MARKDOWN_MIME,
+            )
+        )

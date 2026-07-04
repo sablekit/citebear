@@ -12,18 +12,21 @@ admin UI polls the status the row records.
 """
 
 import argparse
+import logging
 import uuid
 from pathlib import Path
 
-from sqlalchemy import delete, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from citebear_api.blob import fetch_blob
+from citebear_api.blob import delete_blob, fetch_blob, is_blob_url
 from citebear_api.chunking import chunk_sections
 from citebear_api.db import get_session_factory, run_async
 from citebear_api.gateway import get_embeddings
 from citebear_api.models import Chunk, Document
-from citebear_api.parsing import MARKDOWN_MIME, parse_document
+from citebear_api.parsing import MARKDOWN_MIME, UnsupportedMediaTypeError, parse_document
+
+logger = logging.getLogger(__name__)
 
 MAX_DOCUMENT_BYTES = 20 * 1024 * 1024  # 20 MB (SPEC §5.1)
 MAX_PAGES = 300
@@ -57,7 +60,14 @@ async def ingest_document(
     if len(data) > MAX_DOCUMENT_BYTES:
         raise IngestionError(f"Document exceeds the {MAX_DOCUMENT_BYTES // (1024 * 1024)} MB limit")
 
-    sections, page_count = parse_document(data, mime_type)  # raises for unsupported types
+    try:
+        sections, page_count = parse_document(data, mime_type)  # raises for unsupported types
+    except (UnsupportedMediaTypeError, IngestionError):
+        raise
+    except Exception as exc:
+        # a mislabeled or corrupt file (bytes that don't match the extension)
+        # reaches the parser here; surface it as a clean rejection, not a 500
+        raise IngestionError("The document could not be parsed; it may be corrupt.") from exc
     if page_count is not None and page_count > MAX_PAGES:
         raise IngestionError(f"Document exceeds the {MAX_PAGES}-page limit")
     drafts = chunk_sections(sections)
@@ -104,6 +114,15 @@ async def ingest_document(
                 .where(Document.id == document_id)
                 .values(status="ready", page_count=page_count)
             )
+            superseded = list(
+                (
+                    await session.execute(
+                        select(Document.source_url).where(
+                            Document.filename == filename, Document.id != document_id
+                        )
+                    )
+                ).scalars()
+            )
             await session.execute(
                 delete(Document).where(Document.filename == filename, Document.id != document_id)
             )
@@ -118,6 +137,15 @@ async def ingest_document(
             await session.commit()
         raise
 
+    # best-effort: delete the replaced originals' blobs so re-ingesting a file
+    # doesn't leak the prior upload (preloaded docs keep external URLs, skipped)
+    for url in superseded:
+        if is_blob_url(url):
+            try:
+                await delete_blob(url)
+            except Exception:
+                logger.warning("failed to delete superseded blob on re-ingest")
+
     return document_id, len(drafts)
 
 
@@ -126,6 +154,10 @@ async def ingest_from_blob(
 ) -> tuple[uuid.UUID, int]:
     """Fetch an uploaded original from Blob and ingest it. The Blob URL is the
     document's source_url, so the citation viewer links straight to it."""
+    # the blobUrl comes from the admin request body; only fetch Vercel Blob URLs
+    # so it can't be turned into a server-side fetch of an arbitrary address (SSRF)
+    if not is_blob_url(blob_url):
+        raise IngestionError("blobUrl must be a Vercel Blob URL")
     data = await fetch_blob(blob_url)
     return await ingest_document(
         data=data, filename=filename, title=title, mime_type=mime_type, source_url=blob_url
