@@ -2,9 +2,12 @@ import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 
 import { env } from "@/env";
 import {
+  META_DATA_PART,
+  META_PART,
   SOURCES_DATA_PART,
   SOURCES_PART,
   SSE_EVENT,
+  type AnswerMeta,
   type CitebearUIMessage,
   type SourcesData,
 } from "@/lib/chat-events";
@@ -61,8 +64,12 @@ async function* parseSse(body: ReadableStream<Uint8Array>): AsyncGenerator<Upstr
 
 export async function POST(request: Request): Promise<Response> {
   const body = await request.text();
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  const clientIp = forwardedFor?.split(",")[0]?.trim();
+  // Trust only the hop Vercel's edge observed: x-real-ip is set by the platform
+  // from the real TCP peer and overwrites any client-supplied value. The
+  // leftmost x-forwarded-for entry is client-controlled and spoofable, so it
+  // must not drive rate limiting (#9). Absent (local dev / non-Vercel) → no IP
+  // is forwarded and the api attributes the turn to no bucket.
+  const clientIp = request.headers.get("x-real-ip")?.trim() || undefined;
 
   let upstream: Response;
   try {
@@ -83,12 +90,24 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   if (!upstream.ok || !upstream.body) {
-    return new Response(await upstream.text(), {
-      status: upstream.status,
-      headers: {
-        "Content-Type": upstream.headers.get("content-type") ?? "application/problem+json",
+    // Surface the API's Problem detail (rate-limit 429, upstream 5xx, …) as an
+    // error the chat UI already renders, instead of a bare non-200 the SDK turns
+    // into a generic "failed to fetch".
+    let detail = "The answer service failed. Please retry.";
+    try {
+      const problem = JSON.parse(await upstream.text()) as { detail?: string; title?: string };
+      detail = problem.detail ?? problem.title ?? detail;
+    } catch {
+      // non-JSON body: keep the fallback message
+    }
+    const errorStream = createUIMessageStream<CitebearUIMessage>({
+      execute: ({ writer }) => {
+        writer.write({ type: "start" });
+        writer.write({ type: "error", errorText: detail });
+        writer.write({ type: "finish" });
       },
     });
+    return createUIMessageStreamResponse({ stream: errorStream });
   }
 
   const upstreamBody = upstream.body;
@@ -115,7 +134,13 @@ export async function POST(request: Request): Promise<Response> {
           }
           writer.write({ type: "text-delta", id: textId, delta });
         } else if (event === SSE_EVENT.done) {
-          // carries messageId/grounded; the feedback UI consumes it in Milestone 5
+          // messageId/grounded surfaced as a data part so the finished answer
+          // carries the id the 👍/👎 control posts feedback against
+          writer.write({
+            type: META_DATA_PART,
+            id: META_PART,
+            data: JSON.parse(data) as AnswerMeta,
+          });
           terminated = true;
         } else if (event === SSE_EVENT.error) {
           const problem = JSON.parse(data) as { title?: string; detail?: string };

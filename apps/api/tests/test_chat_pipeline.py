@@ -224,6 +224,52 @@ def test_refusal_persists_no_citations(monkeypatch: pytest.MonkeyPatch) -> None:
     assert events[-1].data["grounded"] is False
 
 
+def test_cited_answer_is_grounded_despite_refusal_wording(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # the #59 derail shape: opens with the refusal template but ends with a real
+    # citation. The old is_refusal prefix check flagged it grounded=false; the
+    # structural rule keeps it grounded because it cites a source.
+    chunks = [_chunk(1)]
+    added = _install_mocks(
+        monkeypatch,
+        chunks,
+        "I don't know. Actually, the answer is 512 documents [1].",
+    )
+
+    events = _run(_turn())
+
+    assert events[-1].data["grounded"] is True
+    assert [(c.marker, c.chunk_id) for c in added if isinstance(c, MessageCitation)] == [
+        (1, chunks[0].chunk_id)
+    ]
+
+
+def test_uncited_real_answer_is_grounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    # the model answers from the sources but omits the [n] marker (it happens).
+    # This is a real answer, not a refusal, so it must not be logged/counted as
+    # one — grounded stays true because it isn't the refusal template (#33).
+    chunks = [_chunk(1)]
+    _install_mocks(monkeypatch, chunks, "The maximum batch size is 512.")
+
+    events = _run(_turn())
+
+    assert events[-1].data["grounded"] is True
+
+
+def test_template_refusal_from_generator_is_not_grounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # retrieval cleared the threshold but the model still emitted the refusal
+    # template: no citation and it IS the refusal string, so grounded=false.
+    chunks = [_chunk(1)]
+    _install_mocks(monkeypatch, chunks, "I don't know based on the provided documents.")
+
+    events = _run(_turn())
+
+    assert events[-1].data["grounded"] is False
+
+
 def test_condensed_query_feeds_retrieval(monkeypatch: pytest.MonkeyPatch) -> None:
     chunks = [_chunk(1)]
     _install_mocks(monkeypatch, chunks, "answer [1].")

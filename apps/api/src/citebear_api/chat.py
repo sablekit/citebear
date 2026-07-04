@@ -4,17 +4,15 @@ Event sequence: sources -> token* -> done (or error). The sources event is sent
 before the first token so the UI can render citation chips immediately.
 """
 
-import hashlib
-import hmac
 import json
 import logging
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from sqlalchemy import select
@@ -24,6 +22,7 @@ from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from citebear_api.auth import require_internal_key
 from citebear_api.citations import build_citations, cited_markers
+from citebear_api.client_ip import hash_ip
 from citebear_api.condense import condense_question
 from citebear_api.confidence import LOW, assess
 from citebear_api.config import get_settings
@@ -37,7 +36,8 @@ from citebear_api.events import (
 )
 from citebear_api.generation import REFUSAL_TEXT, is_refusal, stream_answer
 from citebear_api.models import Message, MessageCitation
-from citebear_api.problems import problem
+from citebear_api.problems import problem, problem_response
+from citebear_api.rate_limit import RATE_LIMIT_PER_HOUR, RateLimitState, check_chat_rate_limit
 from citebear_api.rerank import RerankUnavailable, get_reranker
 from citebear_api.retrieval import FINAL_TOP_K, RetrievedChunk, embed_query, hybrid_retrieve
 
@@ -63,12 +63,7 @@ class ChatTurn:
 
 
 ChatStream = Callable[[ChatTurn], AsyncIterator[ChatEvent]]
-
-
-def hash_ip(ip: str) -> str:
-    """Keyed hash: rate-limit counting works, raw IPs are not recoverable."""
-    key = get_settings().internal_api_key.encode()
-    return hmac.new(key, ip.encode(), hashlib.sha256).hexdigest()
+RateLimiter = Callable[[str], Awaitable[RateLimitState]]
 
 
 async def persist_citations(
@@ -170,7 +165,15 @@ async def run_chat_turn(turn: ChatTurn) -> AsyncIterator[ChatEvent]:
                 parts.append(delta)
                 yield token_event(delta)
             answer = "".join(parts)
-            grounded = not is_refusal(answer)
+            # grounded = a real answer, not a refusal. A citation is structural
+            # proof the answer drew on the sources, so a cited answer is grounded
+            # whatever its wording — including the #59 derail that opens with the
+            # refusal template. An answer with no marker (the model sometimes
+            # omits them) is still grounded unless it *is* the refusal template;
+            # is_refusal is the belt-and-suspenders check for that uncited case
+            # (#33). This avoids mislabeling an uncited-but-real answer as a
+            # refusal in the log and stats.
+            grounded = bool(cited_markers(answer, len(chunks))) or not is_refusal(answer)
         else:
             # nothing cleared the threshold: refuse without calling the generator
             # (SPEC §5.3). No chunk is trustworthy enough to cite.
@@ -211,19 +214,42 @@ def get_chat_stream() -> ChatStream:
     return run_chat_turn
 
 
+def get_rate_limiter() -> RateLimiter:
+    async def limiter(ip_hash: str) -> RateLimitState:
+        return await check_chat_rate_limit(get_session_factory(), ip_hash)
+
+    return limiter
+
+
 @router.post("/chat", dependencies=[Depends(require_internal_key)])
 async def chat(
     request: Request,
     body: ChatRequest,
     stream: Annotated[ChatStream, Depends(get_chat_stream)],
-) -> EventSourceResponse:
+    rate_limit: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> Response:
     # X-Client-IP is only trusted because the internal key was validated
     client_ip = request.headers.get("x-client-ip")
-    turn = ChatTurn(
-        session_id=body.session_id,
-        message=body.message,
-        ip_hash=hash_ip(client_ip) if client_ip else None,
-    )
+    ip_hash = hash_ip(client_ip) if client_ip else None
+
+    # A request that reached here with a valid internal key but no client IP did
+    # not pass Vercel's edge (which always sets x-real-ip) — in practice local
+    # dev. It can't originate from the public internet without the key, so it is
+    # deliberately not rate-limited rather than denied (which would wedge dev).
+    if ip_hash is not None:
+        state = await rate_limit(ip_hash)
+        if not state.allowed:
+            response = problem_response(
+                429,
+                "Too Many Requests",
+                f"Rate limit reached: {RATE_LIMIT_PER_HOUR} questions per hour. "
+                "Please try again later.",
+                retryAfter=state.retry_after,
+            )
+            response.headers["Retry-After"] = str(state.retry_after)
+            return response
+
+    turn = ChatTurn(session_id=body.session_id, message=body.message, ip_hash=ip_hash)
 
     async def sse_events() -> AsyncIterator[ServerSentEvent]:
         async for event in stream(turn):

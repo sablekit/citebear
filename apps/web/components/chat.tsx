@@ -7,7 +7,9 @@ import { memo, useCallback, useState } from "react";
 import { AnswerContent } from "./answer-content";
 import { SourcePanel } from "./source-panel";
 import {
+  META_DATA_PART,
   SOURCES_DATA_PART,
+  type AnswerMeta,
   type Citation,
   type CitebearUIMessage,
   type SourcesData,
@@ -32,6 +34,75 @@ function sourcesOf(message: CitebearUIMessage): SourcesData | null {
   return null;
 }
 
+function metaOf(message: CitebearUIMessage): AnswerMeta | null {
+  for (const part of message.parts) {
+    if (part.type === META_DATA_PART) return part.data;
+  }
+  return null;
+}
+
+// A pre-stream error (rate-limit 429, upstream 5xx) is surfaced as an error-only
+// message stream; the SDK still pushes an assistant message for it, but with no
+// text and no sources. Skip those so a failed turn shows the error banner, not a
+// blank bubble. A streaming answer always has a sources part or text.
+function isRenderableAssistant(message: CitebearUIMessage): boolean {
+  return messageText(message) !== "" || sourcesOf(message) !== null;
+}
+
+// 👍/👎 on a finished answer (SPEC §7). Optimistic: the button reflects the
+// choice immediately and reverts if the POST fails. The API upserts one row
+// per message, so switching or re-clicking is idempotent.
+function AnswerFeedback({ messageId }: { messageId: string }) {
+  const [rating, setRating] = useState<1 | -1 | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const submit = async (next: 1 | -1) => {
+    if (pending || rating === next) return;
+    const previous = rating;
+    setRating(next);
+    setPending(true);
+    try {
+      const response = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId, rating: next }),
+      });
+      if (!response.ok) setRating(previous);
+    } catch {
+      setRating(previous);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const base =
+    "rounded-md px-1.5 py-0.5 text-sm transition-colors disabled:opacity-50 hover:bg-zinc-100 dark:hover:bg-zinc-800";
+  return (
+    <div className="mt-2 flex items-center gap-1">
+      <button
+        type="button"
+        aria-label="Helpful"
+        aria-pressed={rating === 1}
+        disabled={pending}
+        onClick={() => void submit(1)}
+        className={`${base} ${rating === 1 ? "opacity-100" : "opacity-50 grayscale hover:opacity-80"}`}
+      >
+        👍
+      </button>
+      <button
+        type="button"
+        aria-label="Not helpful"
+        aria-pressed={rating === -1}
+        disabled={pending}
+        onClick={() => void submit(-1)}
+        className={`${base} ${rating === -1 ? "opacity-100" : "opacity-50 grayscale hover:opacity-80"}`}
+      >
+        👎
+      </button>
+    </div>
+  );
+}
+
 function lastUserText(messages: CitebearUIMessage[]): string {
   const last = messages.at(-1);
   return last?.role === "user" ? messageText(last) : "";
@@ -53,6 +124,8 @@ const AssistantMessage = memo(function AssistantMessage({
   // flag a weak answer, but not a refusal (which carries no citations and says
   // so in its own text) — SPEC §5.3
   const lowConfidence = sources?.confidence === "low" && citations.size > 0;
+  // present once the answer is persisted (the done event); gates the feedback UI
+  const meta = metaOf(message);
   return (
     <li className="max-w-full self-start rounded-2xl rounded-bl-sm border border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
       {lowConfidence && (
@@ -64,6 +137,7 @@ const AssistantMessage = memo(function AssistantMessage({
         </p>
       )}
       <AnswerContent text={messageText(message)} citations={citations} onSelect={onSelect} />
+      {meta && <AnswerFeedback messageId={meta.messageId} />}
     </li>
   );
 });
@@ -139,9 +213,9 @@ export function Chat() {
               >
                 {messageText(message)}
               </li>
-            ) : (
+            ) : isRenderableAssistant(message) ? (
               <AssistantMessage key={message.id} message={message} onSelect={setActiveCitation} />
-            ),
+            ) : null,
           )}
           {status === "submitted" && (
             <li className="self-start px-4 py-2 text-sm text-zinc-400" aria-label="Thinking">

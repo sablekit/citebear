@@ -43,6 +43,7 @@ jobs:
       DATABASE_URL: postgresql://citebear:citebear@localhost:5432/citebear
       GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
       INTERNAL_API_KEY: golden-ci-placeholder # golden hits the pipeline directly, not the HTTP auth
+      IP_HASH_SECRET: golden-ci-placeholder
       # golden exercises retrieval, not the admin/upload paths; the ingest CLI
       # still validates all settings at startup, so give it placeholders
       ADMIN_PASSWORD: golden-ci-placeholder

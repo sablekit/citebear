@@ -31,6 +31,12 @@ export interface SourcesData {
   confidence: string;
 }
 
+/** The `done` event's payload: identifies the persisted answer for feedback. */
+export interface AnswerMeta {
+  messageId: string;
+  grounded: boolean;
+}
+
 /**
  * The `sources` event is surfaced to the client as a `data-sources` part, so
  * each assistant message carries its own citations in `message.parts`.
@@ -40,5 +46,14 @@ export const SOURCES_PART = "sources" as const;
 /** The message-part discriminant for the sources data part (`data-sources`). */
 export const SOURCES_DATA_PART: `data-${typeof SOURCES_PART}` = `data-${SOURCES_PART}`;
 
-/** The typed message the chat works with: text parts + a data-sources part. */
-export type CitebearUIMessage = UIMessage<unknown, { sources: SourcesData }>;
+/**
+ * The `done` event is surfaced as a `data-meta` part, so a finished answer
+ * carries the persisted message id the feedback control needs.
+ */
+export const META_PART = "meta" as const;
+
+/** The message-part discriminant for the answer-meta data part (`data-meta`). */
+export const META_DATA_PART: `data-${typeof META_PART}` = `data-${META_PART}`;
+
+/** The typed message the chat works with: text parts + data-sources / data-meta. */
+export type CitebearUIMessage = UIMessage<unknown, { sources: SourcesData; meta: AnswerMeta }>;

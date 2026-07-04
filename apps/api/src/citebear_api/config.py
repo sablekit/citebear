@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     gateway_base_url: str = "https://ai-gateway.vercel.sh/v1"
     gateway_api_key: str
     internal_api_key: str
+    # dedicated secret for hashing client IPs (rate-limit counting): isolates the
+    # blast radius from the web->api key and can be rotated independently (#9)
+    ip_hash_secret: str
     admin_password: str
     blob_read_write_token: str
     chat_model: str = "anthropic/claude-haiku-4-5"
