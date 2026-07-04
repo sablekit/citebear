@@ -31,6 +31,9 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         {children}
+        <footer className="border-t border-zinc-200 px-4 py-3 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
+          Questions are logged to improve answer quality. No accounts, no cookies, IPs are hashed.
+        </footer>
         <Analytics />
       </body>
     </html>
