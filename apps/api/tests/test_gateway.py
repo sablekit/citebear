@@ -52,6 +52,20 @@ def test_with_retry_recovers_from_transient_faults() -> None:
     assert calls == 3
 
 
+def test_embed_texts_propagates_batch_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    # a batch that fails hard must surface (not hang); the gather is cancelled so
+    # siblings don't keep running after the failure is reported
+    class _Failing:
+        async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
+            raise ValueError("permanent gateway failure")  # non-transient: no retry
+
+    monkeypatch.setattr(gateway, "get_embeddings", lambda: _Failing())
+    monkeypatch.setattr(gateway, "EMBED_BATCH_SIZE", 1)
+
+    with pytest.raises(ValueError, match="permanent gateway failure"):
+        asyncio.run(gateway.embed_texts(["a", "b", "c"]))
+
+
 def test_with_retry_does_not_retry_non_transient_errors() -> None:
     calls = 0
 

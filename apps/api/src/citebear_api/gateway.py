@@ -33,6 +33,11 @@ _TRANSIENT_ERRORS = (
 )
 RETRY_ATTEMPTS = 4
 RETRY_BASE_DELAY = 1.0  # seconds; doubled each attempt
+# the interactive chat path is latency-sensitive: one quick retry salvages a
+# transient blip without stacking multi-second backoff across the serial
+# embed → rerank calls of a single turn (ingest keeps the patient default)
+INTERACTIVE_RETRY_ATTEMPTS = 2
+INTERACTIVE_RETRY_DELAY = 0.5
 
 
 def _is_transient(exc: BaseException) -> bool:
@@ -91,7 +96,17 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
         async with semaphore:
             return await with_retry(lambda: embeddings.aembed_documents(batch))
 
-    batched = await asyncio.gather(*(run(batch) for batch in batches))
+    tasks = [asyncio.create_task(run(batch)) for batch in batches]
+    try:
+        batched = await asyncio.gather(*tasks)
+    except Exception:
+        # bare gather leaves siblings running on the first failure; cancel them so
+        # a failed ingest doesn't keep burning gateway credits (and retries) after
+        # the document is already marked failed
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
     return [vector for batch_vectors in batched for vector in batch_vectors]
 
 
