@@ -5,6 +5,7 @@ import { DefaultChatTransport } from "ai";
 import { memo, useCallback, useMemo, useState } from "react";
 
 import { AnswerContent } from "./answer-content";
+import { SourceLibrary } from "./source-library";
 import { SourcePanel } from "./source-panel";
 import {
   META_DATA_PART,
@@ -189,6 +190,7 @@ export function Chat({ documents }: { documents: LibraryDocument[] }) {
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             Answers cited from the document library — or an honest &ldquo;I don&rsquo;t know.&rdquo;
           </p>
+          <SourceLibrary documents={documents} />
         </div>
       </header>
 
