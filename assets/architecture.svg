@@ -1,0 +1,71 @@
+<svg width="900" height="500" viewBox="0 0 900 500" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <title>CiteBear architecture</title>
+  <defs>
+    <style>
+      .card { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1.5; }
+      .title { font-size: 16px; font-weight: 700; fill: #0f172a; }
+      .store-title { font-size: 14.5px; font-weight: 700; fill: #0f172a; }
+      .sub { font-size: 12.5px; fill: #475569; }
+      .tag { font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+      .edge { stroke: #94a3b8; stroke-width: 2; fill: none; }
+      .edgelbl { font-size: 11px; font-weight: 600; fill: #64748b; }
+    </style>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="#94a3b8" />
+    </marker>
+  </defs>
+
+  <!-- web -->
+  <rect class="card" x="40" y="50" width="330" height="150" rx="14" />
+  <rect x="40" y="50" width="6" height="150" rx="3" fill="#6366f1" />
+  <text class="tag" x="66" y="78" fill="#6366f1">apps/web · VERCEL</text>
+  <text class="title" x="66" y="104">Next.js App Router</text>
+  <text class="sub" x="66" y="128">TypeScript · Tailwind · Vercel AI SDK</text>
+  <text class="sub" x="66" y="150">Chat UI · citations panel · admin</text>
+  <text class="sub" x="66" y="180" font-style="italic" fill="#64748b">Presentation + streaming proxy only</text>
+
+  <!-- api -->
+  <rect class="card" x="530" y="50" width="330" height="150" rx="14" />
+  <rect x="530" y="50" width="6" height="150" rx="3" fill="#059669" />
+  <text class="tag" x="556" y="78" fill="#059669">apps/api · VERCEL FLUID</text>
+  <text class="title" x="556" y="104">FastAPI + LangChain</text>
+  <text class="sub" x="556" y="128">Python 3.12</text>
+  <text class="sub" x="556" y="150">Ingestion · hybrid retrieval · rerank</text>
+  <text class="sub" x="556" y="172">Grounded generation · feedback API</text>
+
+  <!-- web <-> api edges -->
+  <path class="edge" d="M370,110 L524,110" marker-end="url(#arrow)" />
+  <text class="edgelbl" x="447" y="102" text-anchor="middle">HTTP</text>
+  <path class="edge" d="M524,145 L376,145" marker-end="url(#arrow)" />
+  <text class="edgelbl" x="447" y="164" text-anchor="middle">SSE stream</text>
+
+  <!-- api → stores fan-out -->
+  <path class="edge" d="M695,200 L695,248" />
+  <path class="edge" d="M160,248 L740,248" />
+  <path class="edge" d="M160,248 L160,286" marker-end="url(#arrow)" />
+  <path class="edge" d="M450,248 L450,286" marker-end="url(#arrow)" />
+  <path class="edge" d="M740,248 L740,286" marker-end="url(#arrow)" />
+
+  <!-- data stores -->
+  <rect class="card" x="40" y="290" width="240" height="120" rx="12" />
+  <text class="store-title" x="60" y="326">Neon Postgres</text>
+  <text class="sub" x="60" y="350">pgvector (cosine)</text>
+  <text class="sub" x="60" y="370">Postgres full-text search</text>
+  <text class="sub" x="60" y="390">documents · chunks · messages</text>
+
+  <rect class="card" x="330" y="290" width="240" height="120" rx="12" />
+  <text class="store-title" x="350" y="326">Vercel AI Gateway</text>
+  <text class="sub" x="350" y="350">Chat + embedding models</text>
+  <text class="sub" x="350" y="370">Provider-agnostic routing</text>
+  <text class="sub" x="350" y="390">"provider/model" strings</text>
+
+  <rect class="card" x="620" y="290" width="240" height="120" rx="12" />
+  <text class="store-title" x="640" y="326">Vercel Blob</text>
+  <text class="sub" x="640" y="350">Original uploaded files</text>
+  <text class="sub" x="640" y="370">Source-document viewer</text>
+  <text class="sub" x="640" y="390">links to the cited page</text>
+
+  <text x="450" y="452" text-anchor="middle" font-size="12.5" fill="#94a3b8">
+    Monorepo · the web app never touches the database or model providers directly — all RAG logic lives in the Python API.
+  </text>
+</svg>

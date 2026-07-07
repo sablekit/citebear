@@ -1,0 +1,38 @@
+name: Post-deploy smoke
+
+# Runs the production smoke check (scripts/smoke.sh) after Vercel reports a
+# successful production deploy — Vercel's Git integration posts a GitHub
+# deployment_status, which fires this workflow. Catches the class of failure
+# where a deploy is "Ready" (built) but dead at runtime (issue #61).
+#
+# Note: the web and api projects each post a Production success, so this can
+# fire more than once per merge. That is harmless — the check hits the same
+# fixed URLs and retries readiness — and one extra chat turn costs cents.
+on:
+  deployment_status:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    # Only on a successful *production* deploy (or a manual run).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+       github.event.deployment_status.environment == 'Production')
+    runs-on: ubuntu-latest
+    env:
+      WEB_URL: https://citebear.com
+      API_URL: https://citebear-api.vercel.app
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Smoke-test production
+        run: bash scripts/smoke.sh
