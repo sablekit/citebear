@@ -8,13 +8,15 @@ these cover the logic reachable without one.
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
 
 from citebear_api.app import app
 from citebear_api.blob import is_blob_url
-from citebear_api.documents import AdminDocumentOut
+from citebear_api.documents import AdminDocumentOut, DocumentOut, to_document_out
+from citebear_api.models import Document
 from citebear_api.parsing import (
     DOCX_MIME,
     MARKDOWN_MIME,
@@ -22,6 +24,7 @@ from citebear_api.parsing import (
     UnsupportedMediaTypeError,
     mime_from_filename,
 )
+from citebear_api.preloaded import LIBRARY
 
 INTERNAL_HEADER = {"X-Internal-Key": "test-internal-key"}  # matches conftest env
 BEARER_HEADER = {"Authorization": "Bearer test-admin-password"}  # matches conftest env
@@ -78,6 +81,37 @@ def test_admin_document_serializes_camelcase_from_attributes() -> None:
     assert payload["pageCount"] == 42
     assert payload["status"] == "ready"
     assert "createdAt" in payload
+
+
+def test_preloaded_document_serializes_with_attribution() -> None:
+    calibre = next(doc for doc in LIBRARY if doc.title == "Calibre User Manual")
+    row = SimpleNamespace(
+        id=uuid.uuid4(),
+        title=calibre.title,
+        filename=calibre.filename,
+        mime_type=PDF_MIME,
+        source_url=calibre.source_url,  # a manifest URL -> attribution attached
+        page_count=437,
+    )
+    payload = to_document_out(DocumentOut, cast("Document", row)).model_dump(by_alias=True)
+    assert payload["attribution"]["licenseName"] == "GPL-3.0-only"
+    assert payload["attribution"]["authors"] == "Kovid Goyal"
+    assert payload["attribution"]["licenseUrl"].startswith("https://")
+
+
+def test_uploaded_document_serializes_without_attribution() -> None:
+    row = SimpleNamespace(
+        id=uuid.uuid4(),
+        title="An upload",
+        filename="upload.pdf",
+        mime_type=PDF_MIME,
+        source_url="https://x.public.blob.vercel-storage.com/upload.pdf",  # not in manifest
+        page_count=3,
+    )
+    assert (
+        to_document_out(DocumentOut, cast("Document", row)).model_dump(by_alias=True)["attribution"]
+        is None
+    )
 
 
 def test_admin_routes_reject_missing_credentials() -> None:

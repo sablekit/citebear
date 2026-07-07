@@ -200,7 +200,9 @@ browser ──(client upload, token from web app)──► Vercel Blob
   stranding documents in `processing`. If a max-size document cannot finish
   within platform duration limits (validated in Milestone 0), that is the
   trigger to move the API to Railway (persistent process, real background
-  tasks). Documents are capped at 20 MB / ~300 pages in v1.
+  tasks). Uploaded documents are capped at 20 MB / ~300 pages in v1; the
+  preloaded library is loaded by a trusted CLI (not the upload endpoint) and is
+  exempt, so its manuals can run to several hundred pages.
 
 ### 5.2 Retrieval (hybrid + rerank)
 
@@ -401,7 +403,7 @@ clean even if the product ever backs commercial work.
 |---|---|---|
 | Calibre User Manual | GPL v3 | Product/support manual |
 | The Debian Administrator's Handbook | GPL-2+ / CC BY-SA (dual) | Technical handbook |
-| NIST SP 800-63B Digital Identity Guidelines | US-government work, public domain | Enterprise policy/compliance doc |
+| NIST SP 800-63B-4 Digital Identity Guidelines | US-government work, public domain | Enterprise policy/compliance doc |
 
 (Pro Git was considered and dropped: its CC BY-**NC**-SA license would become
 ambiguous in commercial contexts.)

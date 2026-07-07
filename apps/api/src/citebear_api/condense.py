@@ -42,6 +42,8 @@ async def condense_question(message: str, history: list[tuple[str, str]]) -> str
         f"Latest message: {message}\n\nStandalone question:"
     )
     try:
+        # no retry wrapper here: condense already has an instant, correct fallback
+        # (the raw message), so backing off would only add latency to the turn
         response = await get_chat_model().ainvoke(
             [SystemMessage(SYSTEM_PROMPT), HumanMessage(prompt)]
         )

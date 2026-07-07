@@ -37,6 +37,24 @@ def test_oversize_document_is_rejected_before_any_row() -> None:
         _ingest(b"x" * (MAX_DOCUMENT_BYTES + 1), MARKDOWN_MIME)
 
 
+def test_oversize_is_allowed_when_the_cap_is_lifted() -> None:
+    # the trusted CLI path passes max_bytes=None; an over-cap document gets past
+    # the size gate (here it fails later on emptiness, proving the gate was skipped
+    # rather than the whole ingest short-circuiting)
+    with pytest.raises(IngestionError, match="No extractable text"):
+        asyncio.run(
+            ingest_document(
+                data=b" " * (MAX_DOCUMENT_BYTES + 1),
+                filename="big.md",
+                title="Big",
+                mime_type=MARKDOWN_MIME,
+                source_url="https://example.test/big",
+                max_bytes=None,
+                max_pages=None,
+            )
+        )
+
+
 def test_unsupported_mime_is_rejected() -> None:
     with pytest.raises(UnsupportedMediaTypeError):
         _ingest(b"\x89PNG\r\n", "image/png")

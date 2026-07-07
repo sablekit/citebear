@@ -21,6 +21,7 @@ from citebear_api.db import get_session_factory
 from citebear_api.ingest import IngestionError, ingest_from_blob
 from citebear_api.models import Document
 from citebear_api.parsing import UnsupportedMediaTypeError, mime_from_filename
+from citebear_api.preloaded import attribution_for
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,14 @@ class RegisterDocumentRequest(_CamelModel):
     title: str
 
 
+class AttributionOut(_CamelModel):
+    """Credit for a preloaded source document (SPEC §11); absent for uploads."""
+
+    authors: str
+    license_name: str
+    license_url: str
+
+
 class DocumentOut(_CamelModel):
     """Public shape: a ready document the chat can cite."""
 
@@ -46,6 +55,7 @@ class DocumentOut(_CamelModel):
     mime_type: str
     source_url: str
     page_count: int | None
+    attribution: AttributionOut | None = None
 
 
 class AdminDocumentOut(DocumentOut):
@@ -56,6 +66,16 @@ class AdminDocumentOut(DocumentOut):
     created_at: datetime
 
 
+def to_document_out[M: DocumentOut](model_cls: type[M], row: Document) -> M:
+    """Serialize a document row, attaching preloaded-library attribution when the
+    source_url is one the manifest covers."""
+    out = model_cls.model_validate(row)
+    attribution = attribution_for(row.source_url)
+    if attribution is not None:
+        out.attribution = AttributionOut.model_validate(attribution)
+    return out
+
+
 @router.get("/documents", dependencies=[Depends(require_internal_key)])
 async def list_documents() -> list[DocumentOut]:
     async with get_session_factory()() as session:
@@ -64,7 +84,7 @@ async def list_documents() -> list[DocumentOut]:
                 select(Document).where(Document.status == "ready").order_by(Document.title)
             )
         ).scalars()
-        return [DocumentOut.model_validate(row) for row in rows]
+        return [to_document_out(DocumentOut, row) for row in rows]
 
 
 @router.get(
@@ -76,7 +96,7 @@ async def list_admin_documents() -> list[AdminDocumentOut]:
         rows = (
             await session.execute(select(Document).order_by(Document.created_at.desc()))
         ).scalars()
-        return [AdminDocumentOut.model_validate(row) for row in rows]
+        return [to_document_out(AdminDocumentOut, row) for row in rows]
 
 
 @router.post(
@@ -112,7 +132,7 @@ async def register_document(body: RegisterDocumentRequest) -> AdminDocumentOut:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="The document was replaced concurrently; please retry.",
             )
-        return AdminDocumentOut.model_validate(document)
+        return to_document_out(AdminDocumentOut, document)
 
 
 @router.delete(
