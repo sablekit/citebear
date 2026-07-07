@@ -1,7 +1,9 @@
 name: Golden retrieval
 
-# The golden set needs live model API keys and costs tokens, so it runs only on
-# demand and on PRs to main — never in the every-push CI loop (SPEC §9).
+# The golden sets need live model API keys and cost tokens, so they run only on
+# demand and on PRs to main — never in the every-push CI loop (SPEC §9). The
+# self-owned set gates every PR; the preloaded-library set (large external PDFs)
+# runs on the manual job only.
 on:
   workflow_dispatch:
   pull_request:
@@ -65,3 +67,44 @@ jobs:
             --title "CiteBear Agent & Contributor Context" \
             --source-url https://github.com/sablekit/citebear/blob/main/AGENTS.md
       - run: uv run pytest -m golden tests/golden -q
+
+  # The preloaded library is ~28 MB of external PDFs and re-embeds the whole
+  # corpus, so it never gates a PR — only the manual (workflow_dispatch) run,
+  # which fetches the library from its canonical URLs and asserts retrieval over
+  # the real third-party content (SPEC §11).
+  golden-library:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: citebear
+          POSTGRES_PASSWORD: citebear
+          POSTGRES_DB: citebear
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U citebear -d citebear"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://citebear:citebear@localhost:5432/citebear
+      GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
+      INTERNAL_API_KEY: golden-ci-placeholder # golden hits the pipeline directly, not the HTTP auth
+      IP_HASH_SECRET: golden-ci-placeholder
+      # golden exercises retrieval, not the admin/upload paths; the loader CLI
+      # still validates all settings at startup, so give it placeholders
+      ADMIN_PASSWORD: golden-ci-placeholder
+      BLOB_READ_WRITE_TOKEN: golden-ci-placeholder
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      - run: uv sync --locked
+      - run: uv run alembic upgrade head
+      - name: Load the preloaded library
+        run: uv run python -m citebear_api.load_library
+      - run: uv run pytest -m golden_library tests/golden -q
