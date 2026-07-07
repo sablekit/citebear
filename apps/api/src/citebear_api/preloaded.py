@@ -54,7 +54,7 @@ LIBRARY: list[LibraryDocument] = [
         source_url="https://debian-handbook.info/download/buster/debian-handbook.pdf",
         attribution=Attribution(
             authors="Raphaël Hertzog & Roland Mas",
-            license_name="GPL-2.0-or-later AND CC-BY-SA-3.0",
+            license_name="GPL-2.0-or-later OR CC-BY-SA-3.0",
             license_url="https://debian-handbook.info/about-the-book/",
         ),
     ),
