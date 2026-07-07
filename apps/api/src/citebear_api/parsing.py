@@ -53,8 +53,9 @@ def _line_is_bold(fonts: list[str]) -> bool:
 
 def _bold_heading_like(text: str) -> bool:
     """A short, fully-bold line that doesn't read like a sentence is very likely
-    a body-size heading rather than emphasized prose."""
-    return len(text.split()) <= BOLD_HEADING_MAX_WORDS and not text.endswith(".")
+    a body-size heading rather than emphasized prose. A trailing sentence
+    terminator (. ? !) marks prose; a trailing colon still reads as a heading."""
+    return len(text.split()) <= BOLD_HEADING_MAX_WORDS and not text.endswith((".", "?", "!"))
 
 
 class UnsupportedMediaTypeError(ValueError):
@@ -181,7 +182,10 @@ def parse_pdf(data: bytes, max_pages: int | None = None) -> tuple[list[Section],
         by_size = level_of.get(size)
         if by_size is not None:
             return by_size
-        if bold and _bold_heading_like(text):
+        # promote bold lines only at (or above) body size — a bold line SMALLER
+        # than body is a running header / caption / footnote label, which would
+        # otherwise be stamped as a heading on every page and shred the trail
+        if bold and size >= body_size and _bold_heading_like(text):
             return bold_level
         return None
 

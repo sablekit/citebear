@@ -100,6 +100,20 @@ def test_pdf_bold_body_sentence_is_not_a_heading() -> None:
     assert all("emphasized" not in path for s in sections for path in s.section_path)
 
 
+def test_pdf_bold_line_smaller_than_body_is_not_a_heading() -> None:
+    # a bold line SMALLER than body size (a running page header / caption) must
+    # not be promoted to a heading, or it would fragment every page's section
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", style="B", size=8)  # bold but below the 11pt body
+    pdf.cell(0, 6, "Chapter 3 Running Header", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", size=11)
+    for i in range(6):
+        pdf.cell(0, 6, f"Body sentence {i} of the section.", new_x="LMARGIN", new_y="NEXT")
+    sections, _ = parse_pdf(bytes(pdf.output()))
+    assert all("Running Header" not in path for s in sections for path in s.section_path)
+
+
 def _pdf_with_pages(count: int) -> bytes:
     pdf = FPDF()
     for page in range(count):
