@@ -35,10 +35,19 @@ export async function fetchLibrary(): Promise<LibraryDocument[]> {
     const response = await fetch(`${env.API_URL}/documents`, {
       headers: { "X-Internal-Key": env.INTERNAL_API_KEY },
       cache: "no-store",
+      // a wedged API (up but not answering) must not hang the whole page: time
+      // out into the catch below so the chat still renders with an empty library
+      signal: AbortSignal.timeout(3000),
     });
-    if (!response.ok) return [];
+    if (!response.ok) {
+      // log so a misconfigured key / stale URL is observable, not silently an
+      // empty library indistinguishable from "no documents ingested yet"
+      console.error(`fetchLibrary: GET /documents -> ${response.status}`);
+      return [];
+    }
     return (await response.json()) as LibraryDocument[];
-  } catch {
+  } catch (error) {
+    console.error("fetchLibrary: GET /documents failed", error);
     return [];
   }
 }
