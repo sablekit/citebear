@@ -5,9 +5,11 @@ name: Post-deploy smoke
 # deployment_status, which fires this workflow. Catches the class of failure
 # where a deploy is "Ready" (built) but dead at runtime (issue #61).
 #
-# Note: the web and api projects each post a Production success, so this can
-# fire more than once per merge. That is harmless — the check hits the same
-# fixed URLs and retries readiness — and one extra chat turn costs cents.
+# The web and api projects each post their own deployment_status; Vercel names
+# the environment "Production – citebear-web" / "Production – citebear-api"
+# (not a bare "Production"). We gate on the web project's production success:
+# it deploys after the api, so by then the whole chain is live, and it fires
+# the check exactly once per merge.
 on:
   deployment_status:
   workflow_dispatch:
@@ -21,11 +23,12 @@ concurrency:
 
 jobs:
   smoke:
-    # Only on a successful *production* deploy (or a manual run).
+    # Only on the web project's successful production deploy (or a manual run).
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.deployment_status.state == 'success' &&
-       github.event.deployment_status.environment == 'Production')
+       startsWith(github.event.deployment_status.environment, 'Production') &&
+       contains(github.event.deployment_status.environment, 'citebear-web'))
     runs-on: ubuntu-latest
     env:
       WEB_URL: https://citebear.com
