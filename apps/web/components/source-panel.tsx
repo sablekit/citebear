@@ -3,6 +3,8 @@
 import { useEffect, useRef } from "react";
 
 import type { Citation } from "@/lib/chat-events";
+import type { Attribution } from "@/lib/library";
+import { AttributionCredit } from "./attribution-credit";
 
 /** The `#page=` anchor only means anything for PDFs; other links stay canonical. */
 function sourceHref(citation: Citation): string {
@@ -19,9 +21,11 @@ function sourceHref(citation: Citation): string {
  */
 export function SourcePanel({
   citation,
+  attribution,
   onClose,
 }: {
   citation: Citation | null;
+  attribution: Attribution | null;
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -96,6 +100,11 @@ export function SourcePanel({
         </div>
 
         <footer className="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
+          {attribution && (
+            <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+              <AttributionCredit attribution={attribution} />
+            </p>
+          )}
           <a
             href={sourceHref(citation)}
             target="_blank"

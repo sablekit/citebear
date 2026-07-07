@@ -2,9 +2,10 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 
 import { AnswerContent } from "./answer-content";
+import { SourceLibrary } from "./source-library";
 import { SourcePanel } from "./source-panel";
 import {
   META_DATA_PART,
@@ -14,6 +15,7 @@ import {
   type CitebearUIMessage,
   type SourcesData,
 } from "@/lib/chat-events";
+import type { Attribution, LibraryDocument } from "@/lib/library";
 
 const SUGGESTIONS = [
   "How does hybrid retrieval work?",
@@ -142,7 +144,16 @@ const AssistantMessage = memo(function AssistantMessage({
   );
 });
 
-export function Chat() {
+export function Chat({ documents }: { documents: LibraryDocument[] }) {
+  // credit the cited source: the panel footer looks its attribution up by the
+  // citation's sourceUrl (SPEC §11). Uploads carry no attribution and are absent.
+  const attributionByUrl = useMemo(
+    () =>
+      new Map<string, Attribution>(
+        documents.flatMap((doc) => (doc.attribution ? [[doc.sourceUrl, doc.attribution]] : [])),
+      ),
+    [documents],
+  );
   const [sessionId] = useState(() => crypto.randomUUID());
   const [transport] = useState(
     () =>
@@ -179,6 +190,7 @@ export function Chat() {
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             Answers cited from the document library — or an honest &ldquo;I don&rsquo;t know.&rdquo;
           </p>
+          <SourceLibrary documents={documents} disabled={activeCitation !== null} />
         </div>
       </header>
 
@@ -263,7 +275,11 @@ export function Chat() {
         </form>
       </footer>
 
-      <SourcePanel citation={activeCitation} onClose={closePanel} />
+      <SourcePanel
+        citation={activeCitation}
+        attribution={activeCitation ? (attributionByUrl.get(activeCitation.sourceUrl) ?? null) : null}
+        onClose={closePanel}
+      />
     </div>
   );
 }
