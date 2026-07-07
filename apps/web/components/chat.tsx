@@ -18,9 +18,9 @@ import {
 import type { Attribution, LibraryDocument } from "@/lib/library";
 
 const SUGGESTIONS = [
-  "How does hybrid retrieval work?",
-  "What happens when the answer isn't in the documents?",
-  "How are documents chunked?",
+  "What does NIST recommend for minimum password length?",
+  "How do I convert an e-book to another format in Calibre?",
+  "What is the difference between apt and aptitude?",
 ];
 
 function messageText(message: CitebearUIMessage): string {
