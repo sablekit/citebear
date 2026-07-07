@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import type { LibraryDocument } from "@/lib/library";
+import { AttributionCredit } from "./attribution-credit";
 
 /**
  * The document library and its credits (SPEC §11): a header control opens a
@@ -10,8 +11,19 @@ import type { LibraryDocument } from "@/lib/library";
  * and a link to the canonical original — so a visitor can see what CiteBear can
  * answer from, and each source's attribution, without reading the repo.
  * Keyboard-operable (Escape closes, focus returns to the trigger).
+ *
+ * `disabled` while a citation panel is open, so the two slide-overs can't both
+ * open (the library would render occluded behind the panel and steal focus).
+ * memo'd so it doesn't re-render on every streamed token (Chat re-renders per
+ * token; `documents` is a stable server prop).
  */
-export function SourceLibrary({ documents }: { documents: LibraryDocument[] }) {
+export const SourceLibrary = memo(function SourceLibrary({
+  documents,
+  disabled = false,
+}: {
+  documents: LibraryDocument[];
+  disabled?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -43,7 +55,8 @@ export function SourceLibrary({ documents }: { documents: LibraryDocument[] }) {
         ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
-        className="ml-auto self-center rounded-full border border-zinc-300 px-3 py-1 text-sm text-zinc-600 transition-colors hover:border-zinc-500 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-400 dark:hover:text-zinc-50"
+        disabled={disabled}
+        className="ml-auto self-center rounded-full border border-zinc-300 px-3 py-1 text-sm text-zinc-600 transition-colors hover:border-zinc-500 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-400 dark:hover:text-zinc-50"
       >
         Library
       </button>
@@ -96,15 +109,7 @@ export function SourceLibrary({ documents }: { documents: LibraryDocument[] }) {
                   </a>
                   {doc.attribution && (
                     <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                      {doc.attribution.authors} ·{" "}
-                      <a
-                        href={doc.attribution.licenseUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:underline"
-                      >
-                        {doc.attribution.licenseName}
-                      </a>
+                      <AttributionCredit attribution={doc.attribution} />
                     </p>
                   )}
                 </li>
@@ -115,4 +120,4 @@ export function SourceLibrary({ documents }: { documents: LibraryDocument[] }) {
       )}
     </>
   );
-}
+});

@@ -190,7 +190,7 @@ export function Chat({ documents }: { documents: LibraryDocument[] }) {
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             Answers cited from the document library — or an honest &ldquo;I don&rsquo;t know.&rdquo;
           </p>
-          <SourceLibrary documents={documents} />
+          <SourceLibrary documents={documents} disabled={activeCitation !== null} />
         </div>
       </header>
 

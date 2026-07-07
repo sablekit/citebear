@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 import type { Citation } from "@/lib/chat-events";
 import type { Attribution } from "@/lib/library";
+import { AttributionCredit } from "./attribution-credit";
 
 /** The `#page=` anchor only means anything for PDFs; other links stay canonical. */
 function sourceHref(citation: Citation): string {
@@ -101,15 +102,7 @@ export function SourcePanel({
         <footer className="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
           {attribution && (
             <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
-              {attribution.authors} ·{" "}
-              <a
-                href={attribution.licenseUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:underline"
-              >
-                {attribution.licenseName}
-              </a>
+              <AttributionCredit attribution={attribution} />
             </p>
           )}
           <a
