@@ -16,7 +16,12 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from citebear_api.fusion import reciprocal_rank_fusion
-from citebear_api.gateway import get_embeddings, with_retry
+from citebear_api.gateway import (
+    INTERACTIVE_RETRY_ATTEMPTS,
+    INTERACTIVE_RETRY_DELAY,
+    get_embeddings,
+    with_retry,
+)
 from citebear_api.models import Chunk, Document
 
 VECTOR_TOP_K = 20
@@ -60,7 +65,11 @@ class RetrievedChunk:
 async def embed_query(question: str) -> list[float]:
     """Kept separate from the search so callers never hold a DB
     connection across this gateway round trip."""
-    return await with_retry(lambda: get_embeddings().aembed_query(question))
+    return await with_retry(
+        lambda: get_embeddings().aembed_query(question),
+        attempts=INTERACTIVE_RETRY_ATTEMPTS,
+        base_delay=INTERACTIVE_RETRY_DELAY,
+    )
 
 
 def _to_chunk(row: Any, score: float) -> RetrievedChunk:
